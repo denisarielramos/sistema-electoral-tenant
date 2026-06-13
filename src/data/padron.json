@@ -1,0 +1,57 @@
+[
+  {
+    "ci": "9000001",
+    "nombre": "Ana",
+    "apellido": "Demo",
+    "localidad": "Ciudad Demo",
+    "seccional": "Seccional Demo 1",
+    "local_votacion": "Colegio Demo Norte",
+    "mesa": "1",
+    "orden": "101",
+    "direccion": "Calle Ficticia 123"
+  },
+  {
+    "ci": "9000002",
+    "nombre": "Bruno",
+    "apellido": "Ejemplo",
+    "localidad": "Ciudad Demo",
+    "seccional": "Seccional Demo 1",
+    "local_votacion": "Colegio Demo Norte",
+    "mesa": "1",
+    "orden": "102",
+    "direccion": "Avenida Simulada 456"
+  },
+  {
+    "ci": "9000003",
+    "nombre": "Carla",
+    "apellido": "Prueba",
+    "localidad": "Villa Demo",
+    "seccional": "Seccional Demo 2",
+    "local_votacion": "Escuela Demo Sur",
+    "mesa": "2",
+    "orden": "201",
+    "direccion": "Pasaje Inventado 789"
+  },
+  {
+    "ci": "9000004",
+    "nombre": "Diego",
+    "apellido": "Muestra",
+    "localidad": "Villa Demo",
+    "seccional": "Seccional Demo 2",
+    "local_votacion": "Escuela Demo Sur",
+    "mesa": "2",
+    "orden": "202",
+    "direccion": "Ruta Demo Km 4"
+  },
+  {
+    "ci": "9000005",
+    "nombre": "Elena",
+    "apellido": "Ficticia",
+    "localidad": "Barrio Demo",
+    "seccional": "Seccional Demo 3",
+    "local_votacion": "Centro Comunitario Demo",
+    "mesa": "3",
+    "orden": "301",
+    "direccion": "Calle Sin Datos Reales 555"
+  }
+]
