@@ -6,6 +6,7 @@ import React, { useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
 import { ShieldCheck, Eye, EyeOff } from "lucide-react";
 import Dashboard from "./components/Dashboard";
+import { useCampaign } from "./context/CampaignContext";
 import { normalizeCI } from "./utils/estructuraHelpers";
 
 // ======================= SUPERADMINS LOCALES =======================
@@ -25,6 +26,12 @@ const SUPERADMINS = [
 ];
 
 const App = () => {
+  const {
+    currentCampaign,
+    loadingCampaign,
+    campaignError,
+  } = useCampaign();
+
   // ======================= SESIÓN =======================
   const [currentUser, setCurrentUser] = useState(null);
   const [loginID, setLoginID] = useState("");
@@ -134,6 +141,43 @@ const App = () => {
     setLoginPass("");
   };
 
+  const campaignTitle = currentCampaign?.nombre || "Sistema Electoral";
+  const campaignSubtitle = currentCampaign
+    ? [
+        currentCampaign.candidato_nombre,
+        currentCampaign.cargo,
+        currentCampaign.anio,
+      ].filter(Boolean).join(" - ")
+    : "GestiÃ³n de Votantes";
+  const campaignOption = currentCampaign
+    ? [currentCampaign.lista, currentCampaign.opcion].filter(Boolean).join(" - ")
+    : "";
+
+  if (loadingCampaign) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center px-4">
+        <div className="bg-white border border-slate-200 rounded-xl px-5 py-4 shadow-card text-sm font-semibold text-brand-700">
+          Cargando campaña...
+        </div>
+      </div>
+    );
+  }
+
+  if (campaignError || !currentCampaign) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center px-4">
+        <div className="bg-white border border-slate-200 rounded-xl px-5 py-4 shadow-card max-w-md text-center">
+          <p className="text-sm font-semibold text-slate-800">
+            No hay campaña activa configurada.
+          </p>
+          {campaignError && (
+            <p className="text-xs text-slate-500 mt-1">{campaignError}</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // ======================= DASHBOARD =======================
   if (currentUser) {
     return <Dashboard currentUser={currentUser} onLogout={handleLogout} />;
@@ -160,11 +204,16 @@ const App = () => {
               <ShieldCheck className="w-7 h-7 text-white" />
             </div>
             <h1 className="text-2xl font-bold tracking-tight">
-              Sistema Electoral
+              {campaignTitle}
             </h1>
             <p className="text-brand-200 text-sm mt-1">
-              Gestión de Votantes — SL 2026
+              {campaignSubtitle || "GestiÃ³n de Votantes"}
             </p>
+            {campaignOption && (
+              <p className="text-brand-100 text-xs mt-1">
+                {campaignOption}
+              </p>
+            )}
           </div>
 
           {/* Form */}

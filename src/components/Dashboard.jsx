@@ -36,6 +36,7 @@ import {
   generateCoordinadorPDF,
   generateSubcoordinadorPDF,
 } from "../services/pdfService";
+import { useCampaign } from "../context/CampaignContext";
 
 import { getEstadisticas } from "../services/estadisticasService";
 
@@ -284,6 +285,8 @@ const VotanteRow = ({
 
 // ======================= MAIN COMPONENT =======================
 const Dashboard = ({ currentUser, onLogout }) => {
+  const { currentCampaign, hasModule } = useCampaign();
+
   // ======================= STATE =======================
   const [padron, setPadron] = useState([]);
   const [estructura, setEstructura] = useState({
@@ -969,6 +972,7 @@ setPadron(data.padron || []);
 
   // ======================= PDF =======================
   const descargarPDF = async () => {
+    if (!hasModule("pdf")) { alert("El módulo PDF no está habilitado para esta campaña."); return; }
     if (!currentUser) { alert("Usuario no válido"); return; }
     try {
       let doc;
@@ -1001,6 +1005,18 @@ setPadron(data.padron || []);
     subcoordinador: "Sub-coordinador",
   }[currentUser.role] ?? currentUser.role;
 
+  const campaignTitle = currentCampaign?.nombre || "Sistema Electoral";
+  const campaignDetails = currentCampaign
+    ? [
+        currentCampaign.candidato_nombre,
+        currentCampaign.cargo,
+        currentCampaign.anio,
+      ].filter(Boolean).join(" - ")
+    : "";
+  const campaignOption = currentCampaign
+    ? [currentCampaign.lista, currentCampaign.opcion].filter(Boolean).join(" - ")
+    : "";
+
   // ======================= UI =======================
   return (
     <div className="min-h-screen bg-slate-100">
@@ -1024,9 +1040,13 @@ setPadron(data.padron || []);
             </div>
             <div className="min-w-0">
               <h1 className="text-base sm:text-lg font-bold text-white leading-tight truncate">
-                Sistema Electoral
+                {campaignTitle}
               </h1>
               <p className="text-brand-200 text-xs truncate">
+                {campaignDetails || "Sistema Electoral"}
+                {campaignOption ? ` · ${campaignOption}` : ""}
+              </p>
+              <p className="text-brand-100 text-xs truncate mt-0.5">
                 {currentUser.nombre} {currentUser.apellido}
                 <span className="ml-1.5 px-1.5 py-0.5 bg-white/10 rounded text-brand-100 text-xs">
                   {roleLabel}
@@ -1049,7 +1069,7 @@ setPadron(data.padron || []);
 
         {/* =========== STATS CARDS =========== */}
         <section aria-label="Resumen estadístico">
-          {currentUser.role === "superadmin" && (
+          {currentUser.role === "superadmin" && hasModule("gestion_coordinadores") && (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
               <StatCard label="Total red" value={stats?.totalRed} icon={TrendingUp} accent />
               <StatCard label="Coordinadores" value={stats?.coordinadores} icon={Users} />
@@ -1059,7 +1079,7 @@ setPadron(data.padron || []);
               <StatCard label="Pendientes" value={stats?.votosPendientes} icon={AlertCircle} />
             </div>
           )}
-          {currentUser.role === "superadmin" && (
+          {currentUser.role === "superadmin" && hasModule("gestion_coordinadores") && (
             <div className="mt-3">
               <VoteProgressCard
                 confirmed={stats?.totalConfirmados}
@@ -1069,7 +1089,7 @@ setPadron(data.padron || []);
             </div>
           )}
 
-          {currentUser.role === "coordinador" && (
+          {currentUser.role === "coordinador" && hasModule("gestion_coordinadores") && (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
               <StatCard label="Total red" value={stats?.totalRed} icon={TrendingUp} accent />
               <StatCard label="Subcoordinadores" value={stats?.subcoordinadores} icon={Users} />
@@ -1140,7 +1160,7 @@ setPadron(data.padron || []);
             </button>
           )}
 
-          {(currentUser.role === "coordinador" || currentUser.role === "subcoordinador") && (
+          {(currentUser.role === "coordinador" || currentUser.role === "subcoordinador") && hasModule("gestion_votantes") && (
             <button
               onClick={() => { setModalType("votante"); setShowAddModal(true); }}
               className="inline-flex items-center gap-2 border border-brand-300 bg-white hover:bg-brand-50 text-brand-700 px-4 h-10 rounded-xl text-sm font-medium transition-colors w-full sm:w-auto shadow-sm"
@@ -1150,13 +1170,15 @@ setPadron(data.padron || []);
             </button>
           )}
 
-          <button
-            onClick={descargarPDF}
-            className="inline-flex items-center gap-2 border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-4 h-10 rounded-xl text-sm font-medium transition-colors w-full sm:w-auto shadow-sm"
-          >
-            <FileText className="w-4 h-4" />
-            Descargar PDF
-          </button>
+          {hasModule("pdf") && (
+            <button
+              onClick={descargarPDF}
+              className="inline-flex items-center gap-2 border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-4 h-10 rounded-xl text-sm font-medium transition-colors w-full sm:w-auto shadow-sm"
+            >
+              <FileText className="w-4 h-4" />
+              Descargar PDF
+            </button>
+          )}
         </section>
 
         {/* =========== BUSCADOR =========== */}
