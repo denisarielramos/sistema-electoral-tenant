@@ -4,12 +4,40 @@ Esta fase agrega la base minima para empezar a convertir el sistema electoral en
 
 ## Archivos SQL
 
-Ejecutar en este orden sobre un proyecto nuevo de Supabase de prueba:
+Para un proyecto nuevo de Supabase vacio, ejecutar en este orden:
 
-1. `supabase/migrations/001_saas_base.sql`
-2. `supabase/migrations/002_seed_saas_demo.sql`
+1. `supabase/migrations/000_current_base_schema.sql`
+2. `supabase/migrations/000_seed_demo_base.sql` si queres datos demo ficticios
+3. `supabase/migrations/001_saas_base.sql`
+4. `supabase/migrations/002_seed_saas_demo.sql`
+5. `supabase/migrations/004_assign_demo_campaign.sql` si hay registros con `campania_id` null
+6. `supabase/migrations/003_verify_saas_fase_1.sql` para verificar
 
 No ejecutar estos scripts sobre Supabase productivo hasta revisar y adaptar el plan de migracion final.
+
+## Tablas base actuales
+
+`000_current_base_schema.sql` crea las tablas minimas que la app actual espera encontrar:
+
+- `padron`
+- `coordinadores`
+- `subcoordinadores`
+- `votantes`
+
+Tambien crea indices basicos por `ci`, `login_code`, `coordinador_ci` y `asignado_por`.
+
+Este script existe para Supabase de prueba vacio. No activa RLS y no cambia la app.
+
+## Datos demo base
+
+`000_seed_demo_base.sql` carga datos ficticios para probar el flujo actual:
+
+- 6 personas inventadas en `padron`
+- 1 coordinador con `login_code = COORD-DEMO`
+- 1 subcoordinador con `login_code = SUB-DEMO`
+- 4 votantes ficticios
+
+No contiene datos reales.
 
 ## Tablas agregadas
 
@@ -111,11 +139,18 @@ Opcion recomendada desde el SQL Editor:
 1. Abrir el proyecto nuevo de Supabase de prueba.
 2. Ir a `SQL Editor`.
 3. Crear un query nuevo.
-4. Pegar el contenido de `supabase/migrations/001_saas_base.sql`.
-5. Ejecutar el query.
-6. Crear otro query nuevo.
-7. Pegar el contenido de `supabase/migrations/002_seed_saas_demo.sql`.
-8. Ejecutar el query.
+4. Pegar y ejecutar `supabase/migrations/000_current_base_schema.sql`.
+5. Si queres datos demo, pegar y ejecutar `supabase/migrations/000_seed_demo_base.sql`.
+6. Pegar y ejecutar `supabase/migrations/001_saas_base.sql`.
+7. Pegar y ejecutar `supabase/migrations/002_seed_saas_demo.sql`.
+8. Si hay datos con `campania_id` null, pegar y ejecutar `supabase/migrations/004_assign_demo_campaign.sql`.
+9. Pegar y ejecutar `supabase/migrations/003_verify_saas_fase_1.sql`.
+
+La campania demo usa este UUID fijo:
+
+```text
+22222222-2222-2222-2222-222222222222
+```
 
 Si se usa Supabase CLI:
 
@@ -136,6 +171,7 @@ O aplicar los scripts manualmente contra la base de prueba, respetando el mismo 
 - No se cambio branding dinamico en UI ni PDF.
 - No se creo un panel de admin general.
 - No se importo automaticamente el padron a una campania.
+- No se cargaron datos reales.
 
 ## Que falta para Fase 2
 

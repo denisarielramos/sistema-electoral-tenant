@@ -1,5 +1,7 @@
 -- Fase 1: seed demo para Supabase de prueba.
 -- Ejecutar despues de 001_saas_base.sql.
+-- UUID fijo de campania demo:
+-- 22222222-2222-2222-2222-222222222222
 
 insert into public.tenants (id, nombre, estado)
 values (
