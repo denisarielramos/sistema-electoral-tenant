@@ -129,6 +129,12 @@ export async function importarPadronCampania(campaniaId, rows) {
   if (!campaniaId) throw new Error("Debe seleccionar una campaña.");
   if (!rows?.length) throw new Error("No hay filas para importar.");
 
+  const toNullableNumber = (value) => {
+    if (value === null || value === undefined || value === "") return null;
+    const numberValue = Number(value);
+    return Number.isFinite(numberValue) ? numberValue : null;
+  };
+
   const payload = rows.map((row) => ({
     campania_id: campaniaId,
     ci: Number(row.ci),
@@ -136,9 +142,9 @@ export async function importarPadronCampania(campaniaId, rows) {
     apellido: row.apellido || null,
     localidad: row.localidad || null,
     local_votacion: row.local_votacion || null,
-    seccional: row.seccional ? Number(row.seccional) : null,
-    mesa: row.mesa ? Number(row.mesa) : null,
-    orden: row.orden ? Number(row.orden) : null,
+    seccional: toNullableNumber(row.seccional),
+    mesa: toNullableNumber(row.mesa),
+    orden: toNullableNumber(row.orden),
     direccion: row.direccion || null,
   }));
 

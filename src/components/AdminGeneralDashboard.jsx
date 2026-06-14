@@ -40,7 +40,18 @@ const EMPTY_SUPERADMIN = {
   password: "",
 };
 
-const PADRON_CSV_COLUMNS = [
+const PADRON_REQUIRED_COLUMNS = [
+  "ci",
+  "nombre",
+  "apellido",
+  "local_votacion",
+  "seccional",
+  "mesa",
+  "orden",
+  "direccion",
+];
+
+const PADRON_PREVIEW_COLUMNS = [
   "ci",
   "nombre",
   "apellido",
@@ -95,7 +106,7 @@ const parsePadronCsv = (text) => {
   }
 
   const headers = parseCsvLine(lines[0]).map((header) => header.trim().toLowerCase());
-  const missing = PADRON_CSV_COLUMNS.filter((column) => !headers.includes(column));
+  const missing = PADRON_REQUIRED_COLUMNS.filter((column) => !headers.includes(column));
 
   if (missing.length > 0) {
     throw new Error(`Faltan columnas requeridas: ${missing.join(", ")}`);
@@ -103,6 +114,8 @@ const parsePadronCsv = (text) => {
 
   const rows = [];
   const errors = [];
+  let invalidRows = 0;
+  let duplicateRows = 0;
   const seen = new Set();
 
   lines.slice(1).forEach((line, index) => {
@@ -112,15 +125,14 @@ const parsePadronCsv = (text) => {
       row[header] = values[headerIndex]?.trim() || "";
     });
 
-    const lineNumber = index + 2;
     const ci = Number(row.ci);
     if (!row.ci || !Number.isFinite(ci) || ci <= 0) {
-      errors.push(`Fila ${lineNumber}: CI inválida.`);
+      invalidRows += 1;
       return;
     }
 
     if (seen.has(String(ci))) {
-      errors.push(`Fila ${lineNumber}: CI duplicada dentro del CSV (${row.ci}).`);
+      duplicateRows += 1;
       return;
     }
 
@@ -128,10 +140,19 @@ const parsePadronCsv = (text) => {
     rows.push({
       ...row,
       ci,
+      localidad: row.localidad || "",
     });
   });
 
-  return { rows, errors };
+  if (invalidRows > 0) {
+    errors.push(`${invalidRows} fila${invalidRows !== 1 ? "s" : ""} con CI inválida fueron saltadas.`);
+  }
+
+  if (duplicateRows > 0) {
+    errors.push(`${duplicateRows} fila${duplicateRows !== 1 ? "s" : ""} duplicada${duplicateRows !== 1 ? "s" : ""} dentro del CSV fueron saltadas.`);
+  }
+
+  return { rows, errors, invalidRows, duplicateRows, sourceRows: lines.length - 1 };
 };
 
 const Section = ({ title, actions, children }) => (
@@ -450,13 +471,16 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
 
     try {
       const text = await padronImport.file.text();
-      const { rows, errors } = parsePadronCsv(text);
+      const { rows, errors, invalidRows, duplicateRows } = parsePadronCsv(text);
+      const skippedRows = invalidRows + duplicateRows;
       setPadronPreviewRows(rows);
       setPadronImportErrors(errors);
       setPadronImportSummary({
         total: rows.length,
+        processed: 0,
         inserted: 0,
         updated: 0,
+        errors: skippedRows,
         imported: false,
       });
     } catch (err) {
@@ -479,16 +503,9 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
       return;
     }
 
-    if (padronImportErrors.length > 0) {
-      setPadronImportErrors((prev) => [
-        ...prev,
-        "Corrija los errores del CSV antes de importar.",
-      ]);
-      return;
-    }
-
     setImportingPadron(true);
     try {
+      const total = padronPreviewRows.length;
       const existingCis = await listarPadronCisCampania(
         padronImport.campania_id,
         padronPreviewRows.map((row) => row.ci)
@@ -496,19 +513,42 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
       const existingSet = new Set(existingCis.map(String));
       const updated = padronPreviewRows.filter((row) => existingSet.has(String(row.ci))).length;
       const inserted = padronPreviewRows.length - updated;
-
-      const imported = await importarPadronCampania(
-        padronImport.campania_id,
-        padronPreviewRows
-      );
+      let processed = 0;
+      const chunkSize = 500;
+      const skippedRows = padronImportSummary?.errors || 0;
 
       setPadronImportSummary({
-        total: imported.length,
+        total,
+        processed,
         inserted,
         updated,
+        errors: skippedRows,
+        imported: false,
+      });
+
+      for (let i = 0; i < padronPreviewRows.length; i += chunkSize) {
+        const chunk = padronPreviewRows.slice(i, i + chunkSize);
+        await importarPadronCampania(padronImport.campania_id, chunk);
+        processed += chunk.length;
+        setPadronImportSummary({
+          total,
+          processed,
+          inserted,
+          updated,
+          errors: skippedRows,
+          imported: false,
+        });
+      }
+
+      setPadronImportSummary({
+        total,
+        processed,
+        inserted,
+        updated,
+        errors: skippedRows,
         imported: true,
       });
-      setSuccessMessage(`Padrón importado: ${inserted} nuevos y ${updated} actualizados.`);
+      setSuccessMessage(`Padrón importado: ${inserted} nuevos y ${updated} actualizados. Procesados: ${processed}.`);
     } catch (err) {
       console.error("Error importando padrón:", err);
       setPadronImportErrors([err?.message || "No se pudo importar el padrón."]);
@@ -713,7 +753,7 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
                 </ActionButton>
                 <ActionButton
                   onClick={handleImportPadron}
-                  disabled={importingPadron || padronPreviewRows.length === 0 || padronImportErrors.length > 0}
+                  disabled={importingPadron || padronPreviewRows.length === 0}
                 >
                   {importingPadron ? "Importando..." : "Importar"}
                 </ActionButton>
@@ -721,7 +761,7 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
             </div>
 
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-600">
-              Formato esperado: ci,nombre,apellido,localidad,local_votacion,seccional,mesa,orden,direccion.
+              Formato esperado: ci,nombre,apellido,local_votacion,seccional,mesa,orden,direccion. Localidad es opcional y created_at se ignora.
               Archivo demo: <a className="text-brand-700 font-semibold" href="/demo-padron.csv" target="_blank" rel="noreferrer">demo-padron.csv</a>
             </div>
 
@@ -737,10 +777,12 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
               <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl px-3 py-2 text-sm">
                 {padronImportSummary.imported ? (
                   <span>
-                    Procesados: {padronImportSummary.total}. Nuevos: {padronImportSummary.inserted}. Actualizados: {padronImportSummary.updated}.
+                    Procesados: {padronImportSummary.processed}. Nuevos: {padronImportSummary.inserted}. Actualizados: {padronImportSummary.updated}. Errores/saltados: {padronImportSummary.errors}.
                   </span>
                 ) : (
-                  <span>Total válido para previsualizar: {padronImportSummary.total} registros.</span>
+                  <span>
+                    Total válido: {padronImportSummary.total}. Procesados: {padronImportSummary.processed}. Errores/saltados: {padronImportSummary.errors}.
+                  </span>
                 )}
               </div>
             )}
@@ -750,7 +792,7 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
                 <table className="min-w-full text-xs">
                   <thead className="bg-slate-50 text-slate-500">
                     <tr>
-                      {PADRON_CSV_COLUMNS.map((column) => (
+                      {PADRON_PREVIEW_COLUMNS.map((column) => (
                         <th key={column} className="px-3 py-2 text-left font-semibold">
                           {column}
                         </th>
@@ -760,7 +802,7 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
                   <tbody className="divide-y divide-slate-100">
                     {padronPreviewRows.slice(0, 10).map((row) => (
                       <tr key={row.ci} className="bg-white">
-                        {PADRON_CSV_COLUMNS.map((column) => (
+                        {PADRON_PREVIEW_COLUMNS.map((column) => (
                           <td key={column} className="px-3 py-2 text-slate-700 whitespace-nowrap">
                             {row[column] || ""}
                           </td>
