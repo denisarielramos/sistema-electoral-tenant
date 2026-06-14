@@ -214,7 +214,7 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
     const nombre = campaignForm.nombre.trim();
 
     if (!campaignForm.tenant_id || !nombre) {
-      setFormError("No se puede crear una campaña sin cliente y nombre.");
+      setFormError("No se puede crear una campaña sin cliente / responsable y nombre.");
       return;
     }
 
@@ -305,28 +305,27 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
         )}
 
         <div className="flex flex-wrap gap-2">
-          <ActionButton onClick={() => setTenantModalOpen(true)}>
-            <Plus className="w-4 h-4" />
-            Crear cliente
-          </ActionButton>
           <ActionButton
             onClick={() => setCampaignModalOpen(true)}
             disabled={tenants.length === 0}
-            variant="subtle"
           >
             <Plus className="w-4 h-4" />
             Crear campaña
+          </ActionButton>
+          <ActionButton onClick={() => setTenantModalOpen(true)} variant="subtle">
+            <Plus className="w-4 h-4" />
+            Crear cliente / responsable
           </ActionButton>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
           <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-card">
-            <p className="text-xs font-semibold uppercase text-slate-500">Tenants</p>
-            <p className="text-3xl font-bold text-slate-800">{tenants.length}</p>
-          </div>
-          <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-card">
             <p className="text-xs font-semibold uppercase text-slate-500">Campañas</p>
             <p className="text-3xl font-bold text-slate-800">{campanias.length}</p>
+          </div>
+          <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-card">
+            <p className="text-xs font-semibold uppercase text-slate-500">Clientes</p>
+            <p className="text-3xl font-bold text-slate-800">{tenants.length}</p>
           </div>
           <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-card">
             <p className="text-xs font-semibold uppercase text-slate-500">Módulos</p>
@@ -337,29 +336,6 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
             <p className="text-3xl font-bold text-slate-800">{usuariosAdmin.length}</p>
           </div>
         </div>
-
-        <Section
-          title="Tenants"
-          actions={
-            <ActionButton onClick={() => setTenantModalOpen(true)} variant="subtle">
-              <Plus className="w-4 h-4" />
-              Crear cliente
-            </ActionButton>
-          }
-        >
-          {tenants.length === 0 ? (
-            <EmptyState text="No hay tenants cargados." />
-          ) : (
-            <div className="space-y-2">
-              {tenants.map((tenant) => (
-                <div key={tenant.id} className="border border-slate-200 rounded-lg p-3">
-                  <p className="text-sm font-semibold text-slate-800">{tenant.nombre}</p>
-                  <p className="text-xs text-slate-500">Estado: {tenant.estado || "sin estado"}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </Section>
 
         <Section
           title="Campañas"
@@ -387,13 +363,36 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
                         {campania.candidato_nombre || "Sin candidato"} · {campania.cargo || "Sin cargo"} {campania.anio || ""}
                       </p>
                       <p className="text-xs text-slate-500">
-                        Tenant: {tenantById.get(campania.tenant_id)?.nombre || campania.tenant_id || "sin tenant"}
+                        Cliente / responsable: {tenantById.get(campania.tenant_id)?.nombre || campania.tenant_id || "sin cliente"}
                       </p>
                     </div>
                     <span className={`text-xs font-semibold px-2 py-1 rounded-md ${campania.activa ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
                       {campania.activa ? "Activa" : "Inactiva"}
                     </span>
                   </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Section>
+
+        <Section
+          title="Clientes / Responsables"
+          actions={
+            <ActionButton onClick={() => setTenantModalOpen(true)} variant="subtle">
+              <Plus className="w-4 h-4" />
+              Crear cliente / responsable
+            </ActionButton>
+          }
+        >
+          {tenants.length === 0 ? (
+            <EmptyState text="No hay clientes/responsables cargados." />
+          ) : (
+            <div className="space-y-2">
+              {tenants.map((tenant) => (
+                <div key={tenant.id} className="border border-slate-200 rounded-lg p-3">
+                  <p className="text-sm font-semibold text-slate-800">{tenant.nombre}</p>
+                  <p className="text-xs text-slate-500">Estado: {tenant.estado || "sin estado"}</p>
                 </div>
               ))}
             </div>
@@ -457,7 +456,7 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
       </main>
 
       {tenantModalOpen && (
-        <Modal title="Crear cliente" onClose={closeTenantModal}>
+        <Modal title="Crear cliente / responsable" onClose={closeTenantModal}>
           <form onSubmit={handleCrearTenant} className="p-5 space-y-4">
             {formError && (
               <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2 text-sm">
@@ -469,7 +468,7 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
                 className={inputClass}
                 value={tenantForm.nombre}
                 onChange={(e) => setTenantForm((prev) => ({ ...prev, nombre: e.target.value }))}
-                placeholder="Nombre del cliente"
+                placeholder="Nombre del cliente o responsable"
                 autoFocus
               />
             </Field>
@@ -488,7 +487,7 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
                 Cancelar
               </ActionButton>
               <ActionButton type="submit" disabled={saving}>
-                Crear cliente
+                Crear cliente / responsable
               </ActionButton>
             </div>
           </form>
@@ -504,14 +503,14 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
               </div>
             )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="Cliente">
+              <Field label="Cliente / responsable">
                 <select
                   className={inputClass}
                   value={campaignForm.tenant_id}
                   onChange={(e) => updateCampaignForm("tenant_id", e.target.value)}
                   autoFocus
                 >
-                  <option value="">Seleccione cliente</option>
+                  <option value="">Seleccione cliente / responsable</option>
                   {tenants.map((tenant) => (
                     <option key={tenant.id} value={tenant.id}>
                       {tenant.nombre}
