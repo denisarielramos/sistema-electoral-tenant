@@ -102,3 +102,51 @@ export async function crearSuperadminCliente(payload) {
   if (error) throw error;
   return data;
 }
+
+export async function listarPadronCisCampania(campaniaId, cis) {
+  if (!campaniaId || !cis?.length) return [];
+
+  const uniqueCis = [...new Set(cis)];
+  const result = [];
+  const chunkSize = 500;
+
+  for (let i = 0; i < uniqueCis.length; i += chunkSize) {
+    const chunk = uniqueCis.slice(i, i + chunkSize);
+    const { data, error } = await supabase
+      .from("padron")
+      .select("ci")
+      .eq("campania_id", campaniaId)
+      .in("ci", chunk);
+
+    if (error) throw error;
+    result.push(...(data || []));
+  }
+
+  return result.map((item) => Number(item.ci));
+}
+
+export async function importarPadronCampania(campaniaId, rows) {
+  if (!campaniaId) throw new Error("Debe seleccionar una campaña.");
+  if (!rows?.length) throw new Error("No hay filas para importar.");
+
+  const payload = rows.map((row) => ({
+    campania_id: campaniaId,
+    ci: Number(row.ci),
+    nombre: row.nombre || null,
+    apellido: row.apellido || null,
+    localidad: row.localidad || null,
+    local_votacion: row.local_votacion || null,
+    seccional: row.seccional ? Number(row.seccional) : null,
+    mesa: row.mesa ? Number(row.mesa) : null,
+    orden: row.orden ? Number(row.orden) : null,
+    direccion: row.direccion || null,
+  }));
+
+  const { data, error } = await supabase
+    .from("padron")
+    .upsert(payload, { onConflict: "campania_id,ci" })
+    .select("ci");
+
+  if (error) throw error;
+  return data || [];
+}

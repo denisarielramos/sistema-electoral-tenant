@@ -1,0 +1,6 @@
+ci,nombre,apellido,localidad,local_votacion,seccional,mesa,orden,direccion
+9200001,Alma,Demo,Localidad Demo A,Colegio Demo A,1,1,101,Calle Ficticia 101
+9200002,Ivan,Prueba,Localidad Demo A,Colegio Demo A,1,1,102,Calle Ficticia 102
+9200003,Nora,Ejemplo,Localidad Demo B,Escuela Demo B,2,2,201,Avenida Simulada 201
+9200004,Raul,Muestra,Localidad Demo B,Escuela Demo B,2,2,202,Avenida Simulada 202
+9200005,Lara,Ficticia,Localidad Demo C,Centro Demo C,3,3,301,Pasaje Inventado 301

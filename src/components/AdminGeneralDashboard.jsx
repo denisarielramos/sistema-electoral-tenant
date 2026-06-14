@@ -5,9 +5,11 @@ import {
   crearCampania,
   crearSuperadminCliente,
   crearTenant,
+  importarPadronCampania,
   listarCampaniaModulos,
   listarCampanias,
   listarModulos,
+  listarPadronCisCampania,
   listarTenants,
   setModuloCampania,
 } from "../services/adminGeneralService";
@@ -36,6 +38,100 @@ const EMPTY_SUPERADMIN = {
   email: "",
   username: "",
   password: "",
+};
+
+const PADRON_CSV_COLUMNS = [
+  "ci",
+  "nombre",
+  "apellido",
+  "localidad",
+  "local_votacion",
+  "seccional",
+  "mesa",
+  "orden",
+  "direccion",
+];
+
+const EMPTY_IMPORT = {
+  campania_id: "",
+  file: null,
+};
+
+const parseCsvLine = (line) => {
+  const values = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    const next = line[i + 1];
+
+    if (char === '"' && inQuotes && next === '"') {
+      current += '"';
+      i += 1;
+    } else if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === "," && !inQuotes) {
+      values.push(current.trim());
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+
+  values.push(current.trim());
+  return values;
+};
+
+const parsePadronCsv = (text) => {
+  const lines = text
+    .replace(/^\uFEFF/, "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length < 2) {
+    throw new Error("El CSV debe tener encabezado y al menos una fila.");
+  }
+
+  const headers = parseCsvLine(lines[0]).map((header) => header.trim().toLowerCase());
+  const missing = PADRON_CSV_COLUMNS.filter((column) => !headers.includes(column));
+
+  if (missing.length > 0) {
+    throw new Error(`Faltan columnas requeridas: ${missing.join(", ")}`);
+  }
+
+  const rows = [];
+  const errors = [];
+  const seen = new Set();
+
+  lines.slice(1).forEach((line, index) => {
+    const values = parseCsvLine(line);
+    const row = {};
+    headers.forEach((header, headerIndex) => {
+      row[header] = values[headerIndex]?.trim() || "";
+    });
+
+    const lineNumber = index + 2;
+    const ci = Number(row.ci);
+    if (!row.ci || !Number.isFinite(ci) || ci <= 0) {
+      errors.push(`Fila ${lineNumber}: CI inválida.`);
+      return;
+    }
+
+    if (seen.has(String(ci))) {
+      errors.push(`Fila ${lineNumber}: CI duplicada dentro del CSV (${row.ci}).`);
+      return;
+    }
+
+    seen.add(String(ci));
+    rows.push({
+      ...row,
+      ci,
+    });
+  });
+
+  return { rows, errors };
 };
 
 const Section = ({ title, actions, children }) => (
@@ -116,6 +212,11 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
   const [tenantForm, setTenantForm] = useState({ nombre: "", estado: "activo" });
   const [campaignForm, setCampaignForm] = useState(EMPTY_CAMPAIGN);
   const [superadminForm, setSuperadminForm] = useState(EMPTY_SUPERADMIN);
+  const [padronImport, setPadronImport] = useState(EMPTY_IMPORT);
+  const [padronPreviewRows, setPadronPreviewRows] = useState([]);
+  const [padronImportErrors, setPadronImportErrors] = useState([]);
+  const [padronImportSummary, setPadronImportSummary] = useState(null);
+  const [importingPadron, setImportingPadron] = useState(false);
 
   const cargarDatos = useCallback(async () => {
     setLoading(true);
@@ -325,6 +426,97 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
     }
   };
 
+  const updatePadronImport = (field, value) => {
+    setPadronImport((prev) => ({ ...prev, [field]: value }));
+    setPadronPreviewRows([]);
+    setPadronImportErrors([]);
+    setPadronImportSummary(null);
+  };
+
+  const handlePreviewPadron = async () => {
+    setPadronImportErrors([]);
+    setPadronImportSummary(null);
+    setSuccessMessage(null);
+
+    if (!padronImport.campania_id) {
+      setPadronImportErrors(["Debe seleccionar una campaña."]);
+      return;
+    }
+
+    if (!padronImport.file) {
+      setPadronImportErrors(["Debe seleccionar un archivo CSV."]);
+      return;
+    }
+
+    try {
+      const text = await padronImport.file.text();
+      const { rows, errors } = parsePadronCsv(text);
+      setPadronPreviewRows(rows);
+      setPadronImportErrors(errors);
+      setPadronImportSummary({
+        total: rows.length,
+        inserted: 0,
+        updated: 0,
+        imported: false,
+      });
+    } catch (err) {
+      setPadronPreviewRows([]);
+      setPadronImportErrors([err?.message || "No se pudo leer el CSV."]);
+    }
+  };
+
+  const handleImportPadron = async () => {
+    setPadronImportErrors([]);
+    setSuccessMessage(null);
+
+    if (!padronImport.campania_id) {
+      setPadronImportErrors(["Debe seleccionar una campaña."]);
+      return;
+    }
+
+    if (!padronPreviewRows.length) {
+      setPadronImportErrors(["Debe previsualizar un CSV válido antes de importar."]);
+      return;
+    }
+
+    if (padronImportErrors.length > 0) {
+      setPadronImportErrors((prev) => [
+        ...prev,
+        "Corrija los errores del CSV antes de importar.",
+      ]);
+      return;
+    }
+
+    setImportingPadron(true);
+    try {
+      const existingCis = await listarPadronCisCampania(
+        padronImport.campania_id,
+        padronPreviewRows.map((row) => row.ci)
+      );
+      const existingSet = new Set(existingCis.map(String));
+      const updated = padronPreviewRows.filter((row) => existingSet.has(String(row.ci))).length;
+      const inserted = padronPreviewRows.length - updated;
+
+      const imported = await importarPadronCampania(
+        padronImport.campania_id,
+        padronPreviewRows
+      );
+
+      setPadronImportSummary({
+        total: imported.length,
+        inserted,
+        updated,
+        imported: true,
+      });
+      setSuccessMessage(`Padrón importado: ${inserted} nuevos y ${updated} actualizados.`);
+    } catch (err) {
+      console.error("Error importando padrón:", err);
+      setPadronImportErrors([err?.message || "No se pudo importar el padrón."]);
+    } finally {
+      setImportingPadron(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-100">
       <header className="bg-brand-700 shadow-md sticky top-0 z-40">
@@ -484,6 +676,102 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
               ))}
             </div>
           )}
+        </Section>
+
+        <Section title="Importar padrón por campaña">
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <Field label="Campaña">
+                <select
+                  className={inputClass}
+                  value={padronImport.campania_id}
+                  onChange={(event) => updatePadronImport("campania_id", event.target.value)}
+                >
+                  <option value="">Seleccione campaña</option>
+                  {campanias.map((campania) => (
+                    <option key={campania.id} value={campania.id}>
+                      {campania.nombre}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Archivo CSV">
+                <input
+                  className={inputClass}
+                  type="file"
+                  accept=".csv,text/csv"
+                  onChange={(event) => updatePadronImport("file", event.target.files?.[0] || null)}
+                />
+              </Field>
+              <div className="flex items-end gap-2">
+                <ActionButton
+                  onClick={handlePreviewPadron}
+                  disabled={importingPadron || campanias.length === 0}
+                  variant="subtle"
+                >
+                  Previsualizar
+                </ActionButton>
+                <ActionButton
+                  onClick={handleImportPadron}
+                  disabled={importingPadron || padronPreviewRows.length === 0 || padronImportErrors.length > 0}
+                >
+                  {importingPadron ? "Importando..." : "Importar"}
+                </ActionButton>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-600">
+              Formato esperado: ci,nombre,apellido,localidad,local_votacion,seccional,mesa,orden,direccion.
+              Archivo demo: <a className="text-brand-700 font-semibold" href="/demo-padron.csv" target="_blank" rel="noreferrer">demo-padron.csv</a>
+            </div>
+
+            {padronImportErrors.length > 0 && (
+              <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2 text-sm space-y-1">
+                {padronImportErrors.map((item) => (
+                  <p key={item}>{item}</p>
+                ))}
+              </div>
+            )}
+
+            {padronImportSummary && (
+              <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl px-3 py-2 text-sm">
+                {padronImportSummary.imported ? (
+                  <span>
+                    Procesados: {padronImportSummary.total}. Nuevos: {padronImportSummary.inserted}. Actualizados: {padronImportSummary.updated}.
+                  </span>
+                ) : (
+                  <span>Total válido para previsualizar: {padronImportSummary.total} registros.</span>
+                )}
+              </div>
+            )}
+
+            {padronPreviewRows.length > 0 && (
+              <div className="border border-slate-200 rounded-xl overflow-x-auto">
+                <table className="min-w-full text-xs">
+                  <thead className="bg-slate-50 text-slate-500">
+                    <tr>
+                      {PADRON_CSV_COLUMNS.map((column) => (
+                        <th key={column} className="px-3 py-2 text-left font-semibold">
+                          {column}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {padronPreviewRows.slice(0, 10).map((row) => (
+                      <tr key={row.ci} className="bg-white">
+                        {PADRON_CSV_COLUMNS.map((column) => (
+                          <td key={column} className="px-3 py-2 text-slate-700 whitespace-nowrap">
+                            {row[column] || ""}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </Section>
 
         <Section title="Módulos por campaña">
