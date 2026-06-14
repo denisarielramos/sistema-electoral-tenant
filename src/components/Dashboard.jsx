@@ -287,6 +287,9 @@ const VotanteRow = ({
 const Dashboard = ({ currentUser, onLogout }) => {
   const { currentCampaign, hasModule } = useCampaign();
   const activeCampaniaId = currentUser?.campania_id || currentCampaign?.id || null;
+  const canViewDashboardBi = hasModule("dashboard_bi");
+  const canManageCoordinators = hasModule("gestion_coordinadores");
+  const canManageVoters = hasModule("gestion_votantes");
 
   // ======================= STATE =======================
   const [padron, setPadron] = useState([]);
@@ -1138,7 +1141,7 @@ setPadron(data.padron || []);
 
         {/* =========== STATS CARDS =========== */}
         <section aria-label="Resumen estadístico">
-          {currentUser.role === "superadmin" && hasModule("gestion_coordinadores") && (
+          {currentUser.role === "superadmin" && canViewDashboardBi && (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
               <StatCard label="Total red" value={stats?.totalRed} icon={TrendingUp} accent />
               <StatCard label="Coordinadores" value={stats?.coordinadores} icon={Users} />
@@ -1148,7 +1151,7 @@ setPadron(data.padron || []);
               <StatCard label="Pendientes" value={stats?.votosPendientes} icon={AlertCircle} />
             </div>
           )}
-          {currentUser.role === "superadmin" && hasModule("gestion_coordinadores") && (
+          {currentUser.role === "superadmin" && canViewDashboardBi && (
             <div className="mt-3">
               <VoteProgressCard
                 confirmed={stats?.totalConfirmados}
@@ -1158,7 +1161,7 @@ setPadron(data.padron || []);
             </div>
           )}
 
-          {currentUser.role === "coordinador" && hasModule("gestion_coordinadores") && (
+          {currentUser.role === "coordinador" && canViewDashboardBi && (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
               <StatCard label="Total red" value={stats?.totalRed} icon={TrendingUp} accent />
               <StatCard label="Subcoordinadores" value={stats?.subcoordinadores} icon={Users} />
@@ -1168,7 +1171,7 @@ setPadron(data.padron || []);
               <StatCard label="Pendientes" value={stats?.votosPendientes} icon={AlertCircle} />
             </div>
           )}
-          {currentUser.role === "coordinador" && (
+          {currentUser.role === "coordinador" && canViewDashboardBi && (
             <div className="mt-3">
               <VoteProgressCard
                 confirmed={stats?.totalConfirmados}
@@ -1178,7 +1181,7 @@ setPadron(data.padron || []);
             </div>
           )}
 
-          {currentUser.role === "subcoordinador" && (
+          {currentUser.role === "subcoordinador" && canViewDashboardBi && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
               <StatCard label="Total red" value={stats?.totalRed} icon={TrendingUp} accent />
               <StatCard label="Mis votantes" value={stats?.votantes} icon={Users} />
@@ -1186,7 +1189,7 @@ setPadron(data.padron || []);
               <StatCard label="Pendientes" value={stats?.votosPendientes} icon={AlertCircle} />
             </div>
           )}
-          {currentUser.role === "subcoordinador" && (
+          {currentUser.role === "subcoordinador" && canViewDashboardBi && (
             <div className="mt-3">
               <VoteProgressCard
                 confirmed={stats?.totalConfirmados}
@@ -1199,7 +1202,7 @@ setPadron(data.padron || []);
 
         {/* =========== ACTION BUTTONS =========== */}
         <section className="flex flex-wrap gap-2" aria-label="Acciones">
-          {currentUser.role === "superadmin" && (
+          {currentUser.role === "superadmin" && canManageCoordinators && (
             <button
               onClick={() => { setModalType("coordinador"); setShowAddModal(true); }}
               className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white px-4 h-10 rounded-xl text-sm font-medium transition-colors shadow-sm w-full sm:w-auto border-0"
@@ -1209,7 +1212,7 @@ setPadron(data.padron || []);
             </button>
           )}
 
-          {currentUser.role === "superadmin" && (
+          {currentUser.role === "superadmin" && canManageCoordinators && (
             <button
               onClick={() => { setVerificarOpen(true); setVerificarCoordCI(""); }}
               className="inline-flex items-center gap-2 border border-brand-300 bg-white hover:bg-brand-50 text-brand-700 px-4 h-10 rounded-xl text-sm font-medium transition-colors w-full sm:w-auto shadow-sm"
@@ -1219,7 +1222,7 @@ setPadron(data.padron || []);
             </button>
           )}
 
-          {currentUser.role === "coordinador" && (
+          {currentUser.role === "coordinador" && canManageCoordinators && (
             <button
               onClick={() => { setModalType("subcoordinador"); setShowAddModal(true); }}
               className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white px-4 h-10 rounded-xl text-sm font-medium transition-colors shadow-sm w-full sm:w-auto border-0"
@@ -1229,7 +1232,7 @@ setPadron(data.padron || []);
             </button>
           )}
 
-          {(currentUser.role === "coordinador" || currentUser.role === "subcoordinador") && hasModule("gestion_votantes") && (
+          {(currentUser.role === "coordinador" || currentUser.role === "subcoordinador") && canManageVoters && (
             <button
               onClick={() => { setModalType("votante"); setShowAddModal(true); }}
               className="inline-flex items-center gap-2 border border-brand-300 bg-white hover:bg-brand-50 text-brand-700 px-4 h-10 rounded-xl text-sm font-medium transition-colors w-full sm:w-auto shadow-sm"

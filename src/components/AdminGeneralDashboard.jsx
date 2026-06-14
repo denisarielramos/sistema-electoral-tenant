@@ -290,7 +290,7 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
   const enabledModulesByCampaign = useMemo(() => {
     const map = new Map();
     campaniaModulos
-      .filter((item) => item.habilitado)
+      .filter((item) => item.habilitado === true)
       .forEach((item) => {
         const set = map.get(item.campania_id) || new Set();
         set.add(item.modulo);
@@ -432,7 +432,7 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
     setError(null);
 
     try {
-      const updated = await setModuloCampania(campaniaId, modulo, habilitado);
+      const updated = await setModuloCampania(campaniaId, modulo, Boolean(habilitado));
       setCampaniaModulos((prev) => {
         const withoutCurrent = prev.filter(
           (item) => !(item.campania_id === campaniaId && item.modulo === modulo)

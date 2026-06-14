@@ -70,7 +70,7 @@ export async function setModuloCampania(campaniaId, modulo, habilitado) {
       {
         campania_id: campaniaId,
         modulo,
-        habilitado,
+        habilitado: Boolean(habilitado),
       },
       { onConflict: "campania_id,modulo" }
     )
