@@ -4,8 +4,11 @@ import { supabase } from "../supabaseClient";
 import {
   crearCampania,
   crearTenant,
+  listarCampaniaModulos,
   listarCampanias,
+  listarModulos,
   listarTenants,
+  setModuloCampania,
 } from "../services/adminGeneralService";
 
 const EMPTY_CAMPAIGN = {
@@ -93,6 +96,7 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
   const [usuariosAdmin, setUsuariosAdmin] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingModule, setSavingModule] = useState(null);
   const [error, setError] = useState(null);
   const [formError, setFormError] = useState(null);
   const [tenantModalOpen, setTenantModalOpen] = useState(false);
@@ -108,32 +112,28 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
       const [
         tenantsData,
         campaniasData,
-        campaniaModulosRes,
-        modulosRes,
+        campaniaModulosData,
+        modulosData,
         usuariosRes,
       ] = await Promise.all([
         listarTenants(),
         listarCampanias(),
-        supabase.from("campania_modulos").select("*").order("campania_id", { ascending: true }),
-        supabase.from("modulos").select("*").order("key", { ascending: true }),
+        listarCampaniaModulos(),
+        listarModulos(),
         supabase
           .from("usuarios_admin")
           .select("id,auth_user_id,campania_id,rol,nombre,apellido,email,username,activo,created_at")
           .order("rol", { ascending: true }),
       ]);
 
-      const firstError = [
-        campaniaModulosRes.error,
-        modulosRes.error,
-        usuariosRes.error,
-      ].find(Boolean);
+      const firstError = usuariosRes.error;
 
       if (firstError) throw firstError;
 
       setTenants(tenantsData);
       setCampanias(campaniasData);
-      setCampaniaModulos(campaniaModulosRes.data || []);
-      setModulos(modulosRes.data || []);
+      setCampaniaModulos(campaniaModulosData);
+      setModulos(modulosData);
       setUsuariosAdmin(usuariosRes.data || []);
     } catch (err) {
       console.error("Error cargando panel admin general:", err);
@@ -152,23 +152,17 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
     [tenants]
   );
 
-  const moduloByKey = useMemo(
-    () => new Map(modulos.map((modulo) => [modulo.key, modulo])),
-    [modulos]
-  );
-
-  const modulesByCampaign = useMemo(() => {
+  const enabledModulesByCampaign = useMemo(() => {
     const map = new Map();
     campaniaModulos
       .filter((item) => item.habilitado)
       .forEach((item) => {
-        const list = map.get(item.campania_id) || [];
-        const modulo = moduloByKey.get(item.modulo);
-        list.push(modulo?.nombre || item.modulo);
-        map.set(item.campania_id, list);
+        const set = map.get(item.campania_id) || new Set();
+        set.add(item.modulo);
+        map.set(item.campania_id, set);
       });
     return map;
-  }, [campaniaModulos, moduloByKey]);
+  }, [campaniaModulos]);
 
   const closeTenantModal = () => {
     setTenantModalOpen(false);
@@ -250,6 +244,27 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
 
   const updateCampaignForm = (field, value) => {
     setCampaignForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleToggleModulo = async (campaniaId, modulo, habilitado) => {
+    const savingKey = `${campaniaId}:${modulo}`;
+    setSavingModule(savingKey);
+    setError(null);
+
+    try {
+      const updated = await setModuloCampania(campaniaId, modulo, habilitado);
+      setCampaniaModulos((prev) => {
+        const withoutCurrent = prev.filter(
+          (item) => !(item.campania_id === campaniaId && item.modulo === modulo)
+        );
+        return [...withoutCurrent, updated];
+      });
+    } catch (err) {
+      console.error("Error actualizando módulo de campaña:", err);
+      setError(err?.message || "No se pudo actualizar el módulo de la campaña.");
+    } finally {
+      setSavingModule(null);
+    }
   };
 
   return (
@@ -399,27 +414,64 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
           )}
         </Section>
 
-        <Section title="Módulos habilitados por campaña">
+        <Section title="Módulos por campaña">
           {campanias.length === 0 ? (
-            <EmptyState text="No hay campañas para mostrar módulos." />
+            <EmptyState text="No hay campañas para configurar módulos." />
+          ) : modulos.length === 0 ? (
+            <EmptyState text="No hay módulos disponibles." />
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-3">
               {campanias.map((campania) => {
-                const modules = modulesByCampaign.get(campania.id) || [];
+                const enabledModules = enabledModulesByCampaign.get(campania.id) || new Set();
                 return (
                   <div key={campania.id} className="border border-slate-200 rounded-lg p-3">
-                    <p className="text-sm font-semibold text-slate-800">{campania.nombre}</p>
-                    {modules.length === 0 ? (
-                      <p className="text-xs text-slate-400 mt-1">Sin módulos habilitados.</p>
-                    ) : (
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {modules.map((moduleName) => (
-                          <span key={moduleName} className="text-xs px-2 py-1 rounded-md bg-brand-50 text-brand-700 border border-brand-100">
-                            {moduleName}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                      <p className="text-sm font-semibold text-slate-800">{campania.nombre}</p>
+                      <p className="text-xs text-slate-500">
+                        {enabledModules.size} de {modulos.length} módulos activos
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 mt-3">
+                      {modulos.map((modulo) => {
+                        const checked = enabledModules.has(modulo.key);
+                        const savingKey = `${campania.id}:${modulo.key}`;
+                        const isSaving = savingModule === savingKey;
+
+                        return (
+                          <label
+                            key={modulo.key}
+                            className={`flex items-start gap-3 border rounded-lg p-3 cursor-pointer transition-colors ${
+                              checked
+                                ? "border-brand-200 bg-brand-50"
+                                : "border-slate-200 bg-white hover:bg-slate-50"
+                            } ${isSaving ? "opacity-60" : ""}`}
+                          >
+                            <input
+                              type="checkbox"
+                              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                              checked={checked}
+                              disabled={Boolean(savingModule)}
+                              onChange={(event) =>
+                                handleToggleModulo(campania.id, modulo.key, event.target.checked)
+                              }
+                            />
+                            <span className="min-w-0">
+                              <span className="block text-sm font-semibold text-slate-800">
+                                {modulo.nombre || modulo.key}
+                              </span>
+                              <span className="block text-xs text-slate-500 break-words">
+                                {modulo.descripcion || modulo.key}
+                              </span>
+                              <span className={`inline-flex mt-2 text-xs font-semibold px-2 py-0.5 rounded-md ${
+                                checked ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
+                              }`}>
+                                {checked ? "Activo" : "Inactivo"}
+                              </span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
                 );
               })}
