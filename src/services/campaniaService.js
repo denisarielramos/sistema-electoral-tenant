@@ -37,7 +37,7 @@ export async function obtenerModulosCampania(campaniaId) {
 
   const { data, error } = await supabase
     .from("campania_modulos")
-    .select("modulo")
+    .select("modulo,habilitado")
     .eq("campania_id", campaniaId)
     .eq("habilitado", true);
 
@@ -45,5 +45,8 @@ export async function obtenerModulosCampania(campaniaId) {
     throw new Error(error.message || "Error obteniendo módulos de campaña");
   }
 
-  return (data || []).map((item) => item.modulo).filter(Boolean);
+  return (data || [])
+    .filter((item) => item.habilitado === true)
+    .map((item) => item.modulo)
+    .filter(Boolean);
 }

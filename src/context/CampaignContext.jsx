@@ -51,11 +51,9 @@ export function CampaignProvider({ children }) {
     reloadCampaign();
   }, [reloadCampaign]);
 
-  const moduleSet = useMemo(() => new Set(enabledModules), [enabledModules]);
-
   const hasModule = useCallback(
-    (modulo) => moduleSet.has(modulo),
-    [moduleSet]
+    (modulo) => enabledModules.includes(modulo),
+    [enabledModules]
   );
 
   const value = useMemo(

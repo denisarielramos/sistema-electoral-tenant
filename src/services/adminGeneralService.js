@@ -45,7 +45,7 @@ export async function crearCampania(payload) {
 export async function listarModulos() {
   const { data, error } = await supabase
     .from("modulos")
-    .select("*")
+    .select("key,nombre,descripcion,activo_global")
     .order("key", { ascending: true });
 
   if (error) throw error;
@@ -55,7 +55,7 @@ export async function listarModulos() {
 export async function listarCampaniaModulos() {
   const { data, error } = await supabase
     .from("campania_modulos")
-    .select("*")
+    .select("campania_id,modulo,habilitado")
     .order("campania_id", { ascending: true })
     .order("modulo", { ascending: true });
 
@@ -63,13 +63,13 @@ export async function listarCampaniaModulos() {
   return data || [];
 }
 
-export async function setModuloCampania(campaniaId, modulo, habilitado) {
+export async function setModuloCampania(campaniaId, moduloKey, habilitado) {
   const { data, error } = await supabase
     .from("campania_modulos")
     .upsert(
       {
         campania_id: campaniaId,
-        modulo,
+        modulo: moduloKey,
         habilitado: Boolean(habilitado),
       },
       { onConflict: "campania_id,modulo" }

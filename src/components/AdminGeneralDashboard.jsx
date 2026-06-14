@@ -287,17 +287,26 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
     [tenants]
   );
 
-  const enabledModulesByCampaign = useMemo(() => {
-    const map = new Map();
-    campaniaModulos
-      .filter((item) => item.habilitado === true)
-      .forEach((item) => {
-        const set = map.get(item.campania_id) || new Set();
-        set.add(item.modulo);
-        map.set(item.campania_id, set);
-      });
-    return map;
-  }, [campaniaModulos]);
+  const findCampaignModule = useCallback(
+    (campaniaId, moduleKey) =>
+      campaniaModulos.find(
+        (item) => item.campania_id === campaniaId && item.modulo === moduleKey
+      ),
+    [campaniaModulos]
+  );
+
+  const isCampaignModuleEnabled = useCallback(
+    (campaniaId, moduleKey) =>
+      Boolean(findCampaignModule(campaniaId, moduleKey)?.habilitado),
+    [findCampaignModule]
+  );
+
+  const countEnabledCampaignModules = useCallback(
+    (campaniaId) =>
+      modulos.filter((modulo) => isCampaignModuleEnabled(campaniaId, modulo.key))
+        .length,
+    [isCampaignModuleEnabled, modulos]
+  );
 
   const closeTenantModal = () => {
     setTenantModalOpen(false);
@@ -426,16 +435,16 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
     }
   };
 
-  const handleToggleModulo = async (campaniaId, modulo, habilitado) => {
-    const savingKey = `${campaniaId}:${modulo}`;
+  const handleToggleModulo = async (campaniaId, moduloKey, habilitado) => {
+    const savingKey = `${campaniaId}:${moduloKey}`;
     setSavingModule(savingKey);
     setError(null);
 
     try {
-      const updated = await setModuloCampania(campaniaId, modulo, Boolean(habilitado));
+      const updated = await setModuloCampania(campaniaId, moduloKey, Boolean(habilitado));
       setCampaniaModulos((prev) => {
         const withoutCurrent = prev.filter(
-          (item) => !(item.campania_id === campaniaId && item.modulo === modulo)
+          (item) => !(item.campania_id === campaniaId && item.modulo === moduloKey)
         );
         return [...withoutCurrent, updated];
       });
@@ -824,18 +833,19 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
           ) : (
             <div className="space-y-3">
               {campanias.map((campania) => {
-                const enabledModules = enabledModulesByCampaign.get(campania.id) || new Set();
+                const enabledModulesCount = countEnabledCampaignModules(campania.id);
                 return (
                   <div key={campania.id} className="border border-slate-200 rounded-lg p-3">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                       <p className="text-sm font-semibold text-slate-800">{campania.nombre}</p>
                       <p className="text-xs text-slate-500">
-                        {enabledModules.size} de {modulos.length} módulos activos
+                        {enabledModulesCount} de {modulos.length} módulos activos
                       </p>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 mt-3">
                       {modulos.map((modulo) => {
-                        const checked = enabledModules.has(modulo.key);
+                        const registro = findCampaignModule(campania.id, modulo.key);
+                        const checked = Boolean(registro?.habilitado);
                         const savingKey = `${campania.id}:${modulo.key}`;
                         const isSaving = savingModule === savingKey;
 
