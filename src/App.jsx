@@ -26,13 +26,14 @@ const SUPERADMINS = [
   },
 ];
 
-const buildAdminUser = (adminUser) => {
+const buildAdminUser = (adminUser, authProvider = null) => {
   const isAdminGeneral = adminUser.rol === "admin_general";
   const isSuperadminCliente = adminUser.rol === "superadmin_cliente";
 
   return {
     ci: adminUser.username,
     id: adminUser.id,
+    auth_user_id: adminUser.auth_user_id || null,
     username: adminUser.username,
     nombre: adminUser.nombre || "",
     apellido: adminUser.apellido || "",
@@ -42,6 +43,7 @@ const buildAdminUser = (adminUser) => {
     campania_id: adminUser.campania_id,
     esAdminGeneral: isAdminGeneral,
     esSuperadminCliente: isSuperadminCliente,
+    authProvider: authProvider || (adminUser.auth_user_id ? "supabase" : "legacy"),
   };
 };
 
@@ -61,6 +63,7 @@ const App = () => {
   const [loginPass, setLoginPass] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [isLogging, setIsLogging] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
 
   // ======================= SESIÓN PERSISTENTE =======================
   useEffect(() => {
@@ -75,19 +78,119 @@ const App = () => {
   }, []);
 
   useEffect(() => {
+    let isMounted = true;
+
+    const restoreAuthSession = async () => {
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        if (error) console.error("Error obteniendo sesion Auth:", error);
+
+        const authUserId = data?.session?.user?.id;
+        if (authUserId) {
+          const adminUser = await getAdminProfileByAuthUserId(authUserId);
+          if (adminUser && isMounted) {
+            const u = buildAdminUser(adminUser, "supabase");
+            setCurrentUser(u);
+            localStorage.setItem("currentUser", JSON.stringify(u));
+            return;
+          }
+          await supabase.auth.signOut();
+        }
+
+        const saved = localStorage.getItem("currentUser");
+        if (!saved) return;
+
+        const u = JSON.parse(saved);
+        const isOperativeUser =
+          u?.role === "coordinador" || u?.role === "subcoordinador";
+        if (!isOperativeUser) {
+          localStorage.removeItem("currentUser");
+          if (isMounted) setCurrentUser(null);
+        }
+      } catch (e) {
+        console.error("Error restaurando sesion Auth:", e);
+      } finally {
+        if (isMounted) setCheckingAuth(false);
+      }
+    };
+
+    restoreAuthSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (isAdminRoute || !currentUser?.campania_id) return;
     reloadCampaign(currentUser.campania_id);
   }, [currentUser?.campania_id, isAdminRoute, reloadCampaign]);
 
-  const loginAdminUser = async (code) => {
-    const { data: adminUser, error: adminErr } = await supabase
+  const getAdminProfileByAuthUserId = async (authUserId) => {
+    if (!authUserId) return null;
+
+    const { data, error } = await supabase
       .from("usuarios_admin")
       .select("*")
-      .eq("username", code)
+      .eq("auth_user_id", authUserId)
       .eq("activo", true)
       .maybeSingle();
 
-    if (adminErr) console.error("Error login admin:", adminErr);
+    if (error) console.error("Error obteniendo perfil admin Auth:", error);
+    return data || null;
+  };
+
+  const getAdminProfileByIdentifier = async (identifier) => {
+    const value = identifier.trim();
+    if (!value) return null;
+
+    const field = value.includes("@") ? "email" : "username";
+    const { data, error } = await supabase
+      .from("usuarios_admin")
+      .select("*")
+      .eq(field, value)
+      .eq("activo", true)
+      .maybeSingle();
+
+    if (error) console.error("Error obteniendo usuario admin:", error);
+    return data || null;
+  };
+
+  const loginAdminUserWithAuth = async (identifier) => {
+    if (!loginPass) return null;
+
+    const value = identifier.trim();
+    let email = value.includes("@") ? value : "";
+
+    if (!email) {
+      const adminByUsername = await getAdminProfileByIdentifier(value);
+      if (!adminByUsername?.email) return null;
+      email = adminByUsername.email;
+    }
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password: loginPass,
+    });
+
+    if (error) {
+      console.warn("Supabase Auth no pudo iniciar sesion admin:", error.message);
+      return null;
+    }
+
+    const adminUser = await getAdminProfileByAuthUserId(data?.user?.id);
+
+    if (!adminUser) {
+      await supabase.auth.signOut();
+      console.warn("Usuario Auth sin perfil activo en usuarios_admin.");
+      return null;
+    }
+
+    return buildAdminUser(adminUser, "supabase");
+  };
+
+  const loginAdminUser = async (code) => {
+    const adminUser = await getAdminProfileByIdentifier(code);
     if (!adminUser) return null;
 
     if (loginPass !== adminUser.password_hash) {
@@ -95,7 +198,7 @@ const App = () => {
       return "handled";
     }
 
-    return buildAdminUser(adminUser);
+    return buildAdminUser(adminUser, "legacy");
   };
 
   const obtenerPersonaPadron = async (ci, campaniaId) => {
@@ -124,10 +227,12 @@ const App = () => {
       if (isAdminRoute) {
         if (!loginPass) return alert("Ingrese contraseña.");
 
-        const adminLogin = await loginAdminUser(code);
+        const authLogin = await loginAdminUserWithAuth(code);
+        const adminLogin = authLogin || await loginAdminUser(code);
         if (adminLogin === "handled") return;
 
         if (!adminLogin || adminLogin.rol !== "admin_general") {
+          if (authLogin?.authProvider === "supabase") await supabase.auth.signOut();
           alert("Este acceso es solo para Admin General.");
           return;
         }
@@ -139,11 +244,13 @@ const App = () => {
 
       // ======================= USUARIOS ADMIN CLIENTE (DEMO) =======================
       if (loginPass) {
-        const adminLogin = await loginAdminUser(code);
+        const authLogin = await loginAdminUserWithAuth(code);
+        const adminLogin = authLogin || await loginAdminUser(code);
         if (adminLogin === "handled") return;
 
         if (adminLogin) {
           if (adminLogin.esAdminGeneral) {
+            if (authLogin?.authProvider === "supabase") await supabase.auth.signOut();
             alert("El Admin General debe ingresar desde /admin");
             return;
           }
@@ -258,7 +365,10 @@ const App = () => {
     if (e.key === "Enter") handleLogin();
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    if (currentUser?.authProvider === "supabase" || currentUser?.auth_user_id) {
+      await supabase.auth.signOut();
+    }
     setCurrentUser(null);
     localStorage.removeItem("currentUser");
     setLoginID("");
@@ -277,11 +387,11 @@ const App = () => {
     ? [currentCampaign.lista, currentCampaign.opcion].filter(Boolean).join(" - ")
     : "";
 
-  if (!isAdminRoute && loadingCampaign) {
+  if (checkingAuth || (!isAdminRoute && loadingCampaign)) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center px-4">
         <div className="bg-white border border-slate-200 rounded-xl px-5 py-4 shadow-card text-sm font-semibold text-brand-700">
-          Cargando campaña...
+          {checkingAuth ? "Verificando sesion..." : "Cargando campaña..."}
         </div>
       </div>
     );
