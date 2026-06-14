@@ -286,6 +286,7 @@ const VotanteRow = ({
 // ======================= MAIN COMPONENT =======================
 const Dashboard = ({ currentUser, onLogout }) => {
   const { currentCampaign, hasModule } = useCampaign();
+  const activeCampaniaId = currentUser?.campania_id || currentCampaign?.id || null;
 
   // ======================= STATE =======================
   const [padron, setPadron] = useState([]);
@@ -353,10 +354,16 @@ const Dashboard = ({ currentUser, onLogout }) => {
 
   // ======================= CARGAR PADRÓN =======================
   const cargarPadronCompleto = async () => {
+    if (!activeCampaniaId) {
+      setPadron([]);
+      return [];
+    }
+
     try {
       const { count, error: countError } = await supabase
         .from("padron")
-        .select("ci", { count: "exact", head: true });
+        .select("ci", { count: "exact", head: true })
+        .eq("campania_id", activeCampaniaId);
 
       if (countError) { console.error("Error count padrón:", countError); return []; }
       if (!count || count <= 0) { setPadron([]); return []; }
@@ -364,6 +371,7 @@ const Dashboard = ({ currentUser, onLogout }) => {
       const { data, error } = await supabase
         .from("padron")
         .select("*")
+        .eq("campania_id", activeCampaniaId)
         .range(0, count - 1);
 
       if (error) { console.error("Error cargando padrón:", error); return []; }
@@ -379,12 +387,21 @@ const Dashboard = ({ currentUser, onLogout }) => {
   // ======================= RECARGAR ESTRUCTURA =======================
   // Accepts an optional padronData arg to avoid stale closure over padron state.
   const recargarEstructura = useCallback(async (padronDataOverride) => {
+    if (!activeCampaniaId) {
+      setEstructura({ coordinadores: [], subcoordinadores: [], votantes: [] });
+      setPadron([]);
+      return;
+    }
+
     try {
       setLoadingEstructura(true);
 
       let padronData = padronDataOverride || padron;
       if (!padronData || padronData.length === 0) {
-        const { data: p } = await supabase.from("padron").select("*");
+        const { data: p } = await supabase
+          .from("padron")
+          .select("*")
+          .eq("campania_id", activeCampaniaId);
         padronData = p || [];
         setPadron(padronData);
       }
@@ -394,15 +411,15 @@ const Dashboard = ({ currentUser, onLogout }) => {
       );
 
       const { data: coordsRaw, error: coordsErr } = await supabase
-        .from("coordinadores").select("*");
+        .from("coordinadores").select("*").eq("campania_id", activeCampaniaId);
       if (coordsErr) console.error("Error coords:", coordsErr);
 
       const { data: subsRaw, error: subsErr } = await supabase
-        .from("subcoordinadores").select("*");
+        .from("subcoordinadores").select("*").eq("campania_id", activeCampaniaId);
       if (subsErr) console.error("Error subs:", subsErr);
 
       const { data: votosRaw, error: votosErr } = await supabase
-        .from("votantes").select("*");
+        .from("votantes").select("*").eq("campania_id", activeCampaniaId);
       if (votosErr) console.error("Error votos:", votosErr);
 
       const mergePadron = (arr) =>
@@ -423,17 +440,17 @@ const Dashboard = ({ currentUser, onLogout }) => {
       setLoadingEstructura(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [activeCampaniaId, padron]);
 
   // Sequential init: load padron first, then pass it to recargarEstructura.
   useEffect(() => {
-  if (!currentUser) return;
+  if (!currentUser || !activeCampaniaId) return;
 
   const init = async () => {
     try {
       setLoadingEstructura(true);
 
-     const data = await cargarEstructuraCompleta();
+     const data = await cargarEstructuraCompleta(activeCampaniaId);
 setEstructura(data);
 setPadron(data.padron || []);
     } catch (err) {
@@ -444,7 +461,7 @@ setPadron(data.padron || []);
   };
 
   init();
-}, [currentUser]);
+}, [currentUser, activeCampaniaId]);
 
   // ======================= RBAC =======================
   const canEditarTelefono = (tipo, persona) => {
@@ -519,6 +536,7 @@ setPadron(data.padron || []);
 
   const handleConfirmVoto = async () => {
     if (!confirmVotoTarget) return;
+    if (!activeCampaniaId) return alert("No hay campaña asociada al usuario.");
     setIsConfirmVotoLoading(true);
     try {
       const newStatus = !isVotoUndoing;
@@ -527,7 +545,8 @@ setPadron(data.padron || []);
       const { error } = await supabase
         .from("votantes")
         .update({ voto_confirmado: newStatus })
-        .eq("ci", targetCI);
+        .eq("ci", targetCI)
+        .eq("campania_id", activeCampaniaId);
 
       if (error) {
         console.error("Error confirmando voto:", error);
@@ -572,6 +591,7 @@ setPadron(data.padron || []);
 
   const handleConfirmSub = async () => {
     if (!confirmSubTarget) return;
+    if (!activeCampaniaId) return alert("No hay campaña asociada al usuario.");
     setIsConfirmSubLoading(true);
     try {
       const newStatus = !isSubUndoing;
@@ -580,7 +600,8 @@ setPadron(data.padron || []);
       const { error } = await supabase
         .from("subcoordinadores")
         .update({ confirmado: newStatus })
-        .eq("ci", targetCI);
+        .eq("ci", targetCI)
+        .eq("campania_id", activeCampaniaId);
 
       if (error) {
         console.error("Error confirmando sub:", error);
@@ -625,6 +646,7 @@ setPadron(data.padron || []);
 
   const guardarTelefono = async () => {
     if (!phoneTarget) return;
+    if (!activeCampaniaId) return alert("No hay campaña asociada al usuario.");
     if (currentUser.role !== "superadmin") {
       if (currentUser.role === "coordinador") {
         const miCI = normalizeCI(currentUser.ci);
@@ -652,7 +674,11 @@ setPadron(data.padron || []);
     if (phoneTarget.tipo === "subcoordinador") tabla = "subcoordinadores";
 
     const targetCI = normalizeCI(phoneTarget.ci);
-    const { error } = await supabase.from(tabla).update({ telefono }).eq("ci", targetCI);
+    const { error } = await supabase
+      .from(tabla)
+      .update({ telefono })
+      .eq("ci", targetCI)
+      .eq("campania_id", activeCampaniaId);
     if (error) { console.error("Error guardando teléfono:", error); alert(error.message || "Error guardando teléfono"); return; }
 
     // Update only the affected array, preserve all other references
@@ -680,6 +706,7 @@ setPadron(data.padron || []);
 
   const guardarDireccion = async () => {
     if (!direccionTarget) return;
+    if (!activeCampaniaId) return alert("No hay campaña asociada al usuario.");
     if (currentUser.role !== "superadmin") {
       if (currentUser.role === "coordinador") {
         const miCI = normalizeCI(currentUser.ci);
@@ -703,7 +730,11 @@ setPadron(data.padron || []);
 
     const direccion_override = String(direccionValue || "").trim();
     const targetCI = normalizeCI(direccionTarget.ci);
-    const { error } = await supabase.from(tabla).update({ direccion_override }).eq("ci", targetCI);
+    const { error } = await supabase
+      .from(tabla)
+      .update({ direccion_override })
+      .eq("ci", targetCI)
+      .eq("campania_id", activeCampaniaId);
     if (error) { console.error("Error guardando dirección:", error); alert(error.message || "Error guardando dirección"); return; }
 
     // Update only the affected array, preserve all other references
@@ -725,13 +756,17 @@ setPadron(data.padron || []);
   // ======================= AGREGAR PERSONA =======================
   const handleAgregarPersona = async (persona) => {
     if (!modalType) return alert("Seleccione tipo.");
+    if (!activeCampaniaId) return alert("No hay campaña asociada al usuario.");
     const ci = normalizeCI(persona.ci);
 
     if (modalType === "coordinador") {
       if (currentUser.role !== "superadmin") { alert("Solo el superadmin puede agregar coordinadores."); return; }
       const accessCode = generarAccessCode(8);
       const { data: inserted, error } = await supabase.from("coordinadores").insert([{
-        ci, login_code: accessCode, asignado_por_nombre: "Superadmin",
+        ci,
+        login_code: accessCode,
+        asignado_por_nombre: "Superadmin",
+        campania_id: activeCampaniaId,
       }]).select();
       if (error) { console.error("Error creando coordinador:", error); alert(error.message || "Error creando coordinador"); return; }
 
@@ -757,6 +792,7 @@ setPadron(data.padron || []);
         coordinador_ci: normalizeCI(currentUser.ci),
         login_code: accessCode,
         asignado_por_nombre: `${currentUser.nombre} ${currentUser.apellido}`,
+        campania_id: activeCampaniaId,
       };
       const { data: inserted, error } = await supabase.from("subcoordinadores").insert([insertPayload]).select();
       if (error) { console.error("Error creando subcoordinador:", error); alert(error.message || "Error creando subcoordinador"); return; }
@@ -792,6 +828,7 @@ setPadron(data.padron || []);
         asignado_por: normalizeCI(currentUser.ci),
         asignado_por_nombre: `${currentUser.nombre} ${currentUser.apellido}`,
         coordinador_ci,
+        campania_id: activeCampaniaId,
       };
       const { data: inserted, error } = await supabase.from("votantes").insert([insertPayload]).select();
       if (error) { console.error("Error creando votante:", error); alert(error.message || "Error creando votante"); return; }
@@ -811,16 +848,17 @@ setPadron(data.padron || []);
   // ======================= QUITAR PERSONA =======================
   const quitarPersona = async (ciRaw, tipo) => {
     if (!window.confirm("¿Quitar persona?")) return;
+    if (!activeCampaniaId) return alert("No hay campaña asociada al usuario.");
     const isSuper = currentUser.role === "superadmin";
     const ci = normalizeCI(ciRaw);
     try {
       if (tipo === "coordinador") {
         if (!isSuper) return alert("Solo superadmin.");
         // DB: cascade delete subs and voters under this coord
-        await supabase.from("subcoordinadores").delete().eq("coordinador_ci", ci);
-        await supabase.from("votantes").delete().eq("coordinador_ci", ci);
-        await supabase.from("votantes").delete().eq("asignado_por", ci);
-        await supabase.from("coordinadores").delete().eq("ci", ci);
+        await supabase.from("subcoordinadores").delete().eq("coordinador_ci", ci).eq("campania_id", activeCampaniaId);
+        await supabase.from("votantes").delete().eq("coordinador_ci", ci).eq("campania_id", activeCampaniaId);
+        await supabase.from("votantes").delete().eq("asignado_por", ci).eq("campania_id", activeCampaniaId);
+        await supabase.from("coordinadores").delete().eq("ci", ci).eq("campania_id", activeCampaniaId);
         // Local: remove coord + their subs + all voters under that coord
         setEstructura((prev) => {
           const subsToRemove = new Set(
@@ -836,8 +874,8 @@ setPadron(data.padron || []);
         });
       }
       if (tipo === "subcoordinador") {
-        await supabase.from("votantes").delete().eq("asignado_por", ci);
-        await supabase.from("subcoordinadores").delete().eq("ci", ci);
+        await supabase.from("votantes").delete().eq("asignado_por", ci).eq("campania_id", activeCampaniaId);
+        await supabase.from("subcoordinadores").delete().eq("ci", ci).eq("campania_id", activeCampaniaId);
         // Local: remove sub + their voters
         setEstructura((prev) => ({
           ...prev,
@@ -846,7 +884,7 @@ setPadron(data.padron || []);
         }));
       }
       if (tipo === "votante") {
-        await supabase.from("votantes").delete().eq("ci", ci);
+        await supabase.from("votantes").delete().eq("ci", ci).eq("campania_id", activeCampaniaId);
         // Local: remove voter
         setEstructura((prev) => ({
           ...prev,

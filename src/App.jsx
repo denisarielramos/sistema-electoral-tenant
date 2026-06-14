@@ -50,6 +50,7 @@ const App = () => {
     currentCampaign,
     loadingCampaign,
     campaignError,
+    reloadCampaign,
   } = useCampaign();
 
   const isAdminRoute = window.location.pathname.startsWith("/admin");
@@ -73,6 +74,11 @@ const App = () => {
     }
   }, []);
 
+  useEffect(() => {
+    if (isAdminRoute || !currentUser?.campania_id) return;
+    reloadCampaign(currentUser.campania_id);
+  }, [currentUser?.campania_id, isAdminRoute, reloadCampaign]);
+
   const loginAdminUser = async (code) => {
     const { data: adminUser, error: adminErr } = await supabase
       .from("usuarios_admin")
@@ -90,6 +96,20 @@ const App = () => {
     }
 
     return buildAdminUser(adminUser);
+  };
+
+  const obtenerPersonaPadron = async (ci, campaniaId) => {
+    if (!ci || !campaniaId) return null;
+
+    const { data, error } = await supabase
+      .from("padron")
+      .select("*")
+      .eq("ci", normalizeCI(ci))
+      .eq("campania_id", campaniaId)
+      .maybeSingle();
+
+    if (error) console.error("Error obteniendo persona de padrón:", error);
+    return data || null;
   };
 
   // ======================= LOGIN =======================
@@ -128,6 +148,9 @@ const App = () => {
             return;
           }
 
+          if (adminLogin.campania_id) {
+            await reloadCampaign(adminLogin.campania_id);
+          }
           setCurrentUser(adminLogin);
           localStorage.setItem("currentUser", JSON.stringify(adminLogin));
           return;
@@ -153,6 +176,9 @@ const App = () => {
           esAdminGeneral: false,
           esSuperadminCliente: false,
         };
+        if (u.campania_id) {
+          await reloadCampaign(u.campania_id);
+        }
         setCurrentUser(u);
         localStorage.setItem("currentUser", JSON.stringify(u));
         return;
@@ -161,18 +187,20 @@ const App = () => {
       // ======================= COORDINADOR =======================
       const { data: coord, error: coordErr } = await supabase
         .from("coordinadores")
-        .select("ci,login_code,telefono,campania_id,padron(*)")
+        .select("ci,login_code,telefono,campania_id")
         .eq("login_code", code)
         .maybeSingle();
 
       if (coordErr) console.error("Error login coord:", coordErr);
 
-      if (coord?.padron) {
+      const coordPadron = await obtenerPersonaPadron(coord?.ci, coord?.campania_id);
+
+      if (coord && coordPadron) {
         const u = {
           ci: normalizeCI(coord.ci),
           username: normalizeCI(coord.ci),
-          nombre: coord.padron.nombre,
-          apellido: coord.padron.apellido,
+          nombre: coordPadron.nombre,
+          apellido: coordPadron.apellido,
           telefono: coord.telefono || "",
           role: "coordinador",
           rol: "coordinador",
@@ -180,6 +208,9 @@ const App = () => {
           esAdminGeneral: false,
           esSuperadminCliente: false,
         };
+        if (u.campania_id) {
+          await reloadCampaign(u.campania_id);
+        }
         setCurrentUser(u);
         localStorage.setItem("currentUser", JSON.stringify(u));
         return;
@@ -188,18 +219,20 @@ const App = () => {
       // ======================= SUBCOORDINADOR =======================
       const { data: sub, error: subErr } = await supabase
         .from("subcoordinadores")
-        .select("ci,login_code,telefono,coordinador_ci,campania_id,padron(*)")
+        .select("ci,login_code,telefono,coordinador_ci,campania_id")
         .eq("login_code", code)
         .maybeSingle();
 
       if (subErr) console.error("Error login sub:", subErr);
 
-      if (sub?.padron) {
+      const subPadron = await obtenerPersonaPadron(sub?.ci, sub?.campania_id);
+
+      if (sub && subPadron) {
         const u = {
           ci: normalizeCI(sub.ci),
           username: normalizeCI(sub.ci),
-          nombre: sub.padron.nombre,
-          apellido: sub.padron.apellido,
+          nombre: subPadron.nombre,
+          apellido: subPadron.apellido,
           telefono: sub.telefono || "",
           role: "subcoordinador",
           rol: "subcoordinador",
@@ -207,6 +240,9 @@ const App = () => {
           esAdminGeneral: false,
           esSuperadminCliente: false,
         };
+        if (u.campania_id) {
+          await reloadCampaign(u.campania_id);
+        }
         setCurrentUser(u);
         localStorage.setItem("currentUser", JSON.stringify(u));
         return;

@@ -16,6 +16,22 @@ export async function obtenerCampaniaActiva() {
   return data || null;
 }
 
+export async function obtenerCampaniaPorId(campaniaId) {
+  if (!campaniaId) return null;
+
+  const { data, error } = await supabase
+    .from("campanias")
+    .select("*")
+    .eq("id", campaniaId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message || "Error obteniendo campaña");
+  }
+
+  return data || null;
+}
+
 export async function obtenerModulosCampania(campaniaId) {
   if (!campaniaId) return [];
 

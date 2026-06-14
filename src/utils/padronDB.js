@@ -1,9 +1,13 @@
-const DB_NAME = "padronDB";
+const DB_NAME_PREFIX = "padronDB";
 const STORE_NAME = "padronStore";
 
-function openDB() {
+function getDBName(campaniaId) {
+  return `${DB_NAME_PREFIX}_${campaniaId || "default"}`;
+}
+
+function openDB(campaniaId) {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
+    const request = indexedDB.open(getDBName(campaniaId), 1);
 
     request.onupgradeneeded = function (event) {
       const db = event.target.result;
@@ -18,8 +22,8 @@ function openDB() {
   });
 }
 
-export async function savePadron(padron) {
-  const db = await openDB();
+export async function savePadron(padron, campaniaId) {
+  const db = await openDB(campaniaId);
 
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, "readwrite");
@@ -34,8 +38,8 @@ export async function savePadron(padron) {
   });
 }
 
-export async function getAllPadron() {
-  const db = await openDB();
+export async function getAllPadron(campaniaId) {
+  const db = await openDB(campaniaId);
 
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, "readonly");

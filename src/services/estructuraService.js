@@ -5,30 +5,39 @@ import { normalizeCI } from "../utils/estructuraHelpers";
 import { savePadron, getAllPadron } from "../utils/padronDB";
 
 // ======================= CARGAR ESTRUCTURA COMPLETA =======================
-export const cargarEstructuraCompleta = async () => {
+export const cargarEstructuraCompleta = async (campaniaId) => {
+if (!campaniaId) {
+  return {
+    padron: [],
+    coordinadores: [],
+    subcoordinadores: [],
+    votantes: [],
+  };
+}
 // 1) Intentar cargar padrón desde IndexedDB
-let padron = await getAllPadron();
+let padron = await getAllPadron(campaniaId);
 
 // 2) Si no existe, descargar desde Supabase y guardar
 if (!padron || padron.length === 0) {
   const { data, error } = await supabase
     .from("padron")
     .select("*")
+    .eq("campania_id", campaniaId)
     .range(0, 100000);
 
   if (error) throw error;
 
   padron = data || [];
-  await savePadron(padron);
+  await savePadron(padron, campaniaId);
 }
   // 3) Cargar estructura (estas tablas suelen ser mucho más chicas)
-  const { data: coords, error: e1 } = await supabase.from("coordinadores").select("*");
+  const { data: coords, error: e1 } = await supabase.from("coordinadores").select("*").eq("campania_id", campaniaId);
   if (e1) throw e1;
 
-  const { data: subs, error: e2 } = await supabase.from("subcoordinadores").select("*");
+  const { data: subs, error: e2 } = await supabase.from("subcoordinadores").select("*").eq("campania_id", campaniaId);
   if (e2) throw e2;
 
-  const { data: votos, error: e3 } = await supabase.from("votantes").select("*");
+  const { data: votos, error: e3 } = await supabase.from("votantes").select("*").eq("campania_id", campaniaId);
   if (e3) throw e3;
 
   // 4) Crear mapa para búsquedas O(1) (clave para velocidad)
@@ -65,13 +74,16 @@ export const agregarPersonaService = async ({
   currentUser,
   estructura,
 }) => {
+  const campaniaId = currentUser?.campania_id;
+  if (!campaniaId) throw new Error("No hay campaña asociada al usuario.");
+
   const ci = normalizeCI(persona.ci);
   let tabla = "";
   let data = {};
 
   if (modalType === "coordinador") {
     tabla = "coordinadores";
-    data = { ci, login_code: persona.login_code };
+    data = { ci, login_code: persona.login_code, campania_id: campaniaId };
   }
 
   if (modalType === "subcoordinador") {
@@ -80,6 +92,7 @@ export const agregarPersonaService = async ({
       ci,
       coordinador_ci: currentUser.ci,
       login_code: persona.login_code,
+      campania_id: campaniaId,
     };
   }
 
@@ -88,6 +101,7 @@ export const agregarPersonaService = async ({
     data = {
       ci,
       asignado_por: currentUser.ci,
+      campania_id: campaniaId,
       coordinador_ci:
         currentUser.role === "coordinador"
           ? currentUser.ci
@@ -104,25 +118,28 @@ export const agregarPersonaService = async ({
 // ======================= ELIMINAR PERSONA =======================
 export const eliminarPersonaService = async (ci, tipo, currentUser) => {
   ci = normalizeCI(ci);
+  const campaniaId = currentUser?.campania_id;
+  if (!campaniaId) throw new Error("No hay campaña asociada al usuario.");
 
   if (tipo === "coordinador" && currentUser.role === "superadmin") {
-    await supabase.from("subcoordinadores").delete().eq("coordinador_ci", ci);
-    await supabase.from("votantes").delete().eq("coordinador_ci", ci);
-    await supabase.from("coordinadores").delete().eq("ci", ci);
+    await supabase.from("subcoordinadores").delete().eq("coordinador_ci", ci).eq("campania_id", campaniaId);
+    await supabase.from("votantes").delete().eq("coordinador_ci", ci).eq("campania_id", campaniaId);
+    await supabase.from("coordinadores").delete().eq("ci", ci).eq("campania_id", campaniaId);
   }
 
   if (tipo === "subcoordinador") {
-    await supabase.from("votantes").delete().eq("asignado_por", ci);
-    await supabase.from("subcoordinadores").delete().eq("ci", ci);
+    await supabase.from("votantes").delete().eq("asignado_por", ci).eq("campania_id", campaniaId);
+    await supabase.from("subcoordinadores").delete().eq("ci", ci).eq("campania_id", campaniaId);
   }
 
   if (tipo === "votante") {
-    await supabase.from("votantes").delete().eq("ci", ci);
+    await supabase.from("votantes").delete().eq("ci", ci).eq("campania_id", campaniaId);
   }
 };
 
 // ======================= ACTUALIZAR TELÉFONO =======================
-export const actualizarTelefonoService = async (persona, telefono) => {
+export const actualizarTelefonoService = async (persona, telefono, campaniaId) => {
+  if (!campaniaId) throw new Error("No hay campaña asociada al usuario.");
   let tabla = "votantes";
   if (persona.tipo === "coordinador") tabla = "coordinadores";
   if (persona.tipo === "subcoordinador") tabla = "subcoordinadores";
@@ -130,7 +147,8 @@ export const actualizarTelefonoService = async (persona, telefono) => {
   const { error } = await supabase
     .from(tabla)
     .update({ telefono })
-    .eq("ci", persona.ci);
+    .eq("ci", persona.ci)
+    .eq("campania_id", campaniaId);
 
   if (error) throw error;
 };

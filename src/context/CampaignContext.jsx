@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import {
   obtenerCampaniaActiva,
+  obtenerCampaniaPorId,
   obtenerModulosCampania,
 } from "../services/campaniaService";
 
@@ -19,12 +20,14 @@ export function CampaignProvider({ children }) {
   const [loadingCampaign, setLoadingCampaign] = useState(true);
   const [campaignError, setCampaignError] = useState(null);
 
-  const reloadCampaign = useCallback(async () => {
+  const reloadCampaign = useCallback(async (campaniaId) => {
     setLoadingCampaign(true);
     setCampaignError(null);
 
     try {
-      const campaign = await obtenerCampaniaActiva();
+      const campaign = campaniaId
+        ? await obtenerCampaniaPorId(campaniaId)
+        : await obtenerCampaniaActiva();
       setCurrentCampaign(campaign);
 
       if (!campaign?.id) {
