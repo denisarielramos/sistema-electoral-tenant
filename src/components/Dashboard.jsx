@@ -950,6 +950,37 @@ setPadron(data.padron || []);
     [padron, estructura]
   );
 
+  const buscarPersonasPadron = useCallback(async (term) => {
+    const rawTerm = String(term || "").trim();
+    if (!activeCampaniaId || !rawTerm) return [];
+
+    const numericCI = normalizeCI(rawTerm);
+    const isCI = numericCI.length > 0 && numericCI === rawTerm.replace(/\s+/g, "");
+    let query = supabase
+      .from("padron")
+      .select("*")
+      .eq("campania_id", activeCampaniaId)
+      .limit(100);
+
+    if (isCI) {
+      query = query.eq("ci", Number(numericCI));
+    } else {
+      if (rawTerm.length < 2) return [];
+      const safeTerm = rawTerm.replace(/,/g, " ").trim();
+      query = query
+        .or(`nombre.ilike.%${safeTerm}%,apellido.ilike.%${safeTerm}%,local_votacion.ilike.%${safeTerm}%`)
+        .order("nombre", { ascending: true });
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.error("Error buscando padrón por campaña:", error);
+      throw new Error(error.message || "No se pudo buscar en el padrón.");
+    }
+
+    return getPersonasDisponibles(data || [], estructura);
+  }, [activeCampaniaId, estructura]);
+
   // ======================= BUSCADOR =======================
   const normalizeText = (v) =>
     (v ?? "").toString().toLowerCase()
@@ -1734,6 +1765,7 @@ setPadron(data.padron || []);
         tipo={modalType}
         onAdd={handleAgregarPersona}
         disponibles={disponibles}
+        onSearch={buscarPersonasPadron}
       />
 
       <ConfirmVotoModal

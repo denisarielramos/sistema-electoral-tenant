@@ -1,17 +1,24 @@
 import React, { useState, useEffect } from "react";
 import { Search, X, UserPlus, ChevronLeft, ChevronRight } from "lucide-react";
 
-const AddPersonModal = ({ show, onClose, tipo, onAdd, disponibles }) => {
+const AddPersonModal = ({ show, onClose, tipo, onAdd, disponibles = [], onSearch }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(1);
+  const [remoteResults, setRemoteResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState("");
 
   useEffect(() => {
-    if (!show) { setSearchTerm(""); setPage(1); }
+    if (!show) {
+      setSearchTerm("");
+      setPage(1);
+      setRemoteResults([]);
+      setIsSearching(false);
+      setSearchError("");
+    }
   }, [show]);
 
   useEffect(() => { setPage(1); }, [searchTerm]);
-
-  if (!show) return null;
 
   const term = searchTerm.trim();
 
@@ -19,7 +26,47 @@ const AddPersonModal = ({ show, onClose, tipo, onAdd, disponibles }) => {
     (text || "").toLowerCase()
       .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-  const filtered = term
+  const isNumericSearch = /^\d+$/.test(term);
+  const canSearch = isNumericSearch ? term.length > 0 : term.length >= 2;
+
+  useEffect(() => {
+    if (!show || !onSearch) return;
+
+    let cancelled = false;
+    setSearchError("");
+
+    if (!canSearch) {
+      setRemoteResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const results = await onSearch(term);
+        if (!cancelled) setRemoteResults(results || []);
+      } catch (error) {
+        if (!cancelled) {
+          setRemoteResults([]);
+          setSearchError(error?.message || "No se pudo buscar en el padrón.");
+        }
+      } finally {
+        if (!cancelled) setIsSearching(false);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [show, onSearch, term, canSearch]);
+
+  if (!show) return null;
+
+  const filtered = onSearch
+    ? remoteResults
+    : term
     ? disponibles
         .filter((p) => {
           const fullName = `${p.nombre ?? ""} ${p.apellido ?? ""}`;
@@ -94,7 +141,11 @@ const AddPersonModal = ({ show, onClose, tipo, onAdd, disponibles }) => {
           </div>
           {searchTerm && (
             <p className="text-xs text-slate-500 mt-1.5">
-              {filtered.length} resultado{filtered.length !== 1 ? "s" : ""}
+              {isSearching
+                ? "Buscando..."
+                : canSearch
+                ? `${filtered.length} resultado${filtered.length !== 1 ? "s" : ""}`
+                : "Escriba al menos 2 caracteres para buscar por texto."}
             </p>
           )}
         </div>
@@ -105,6 +156,21 @@ const AddPersonModal = ({ show, onClose, tipo, onAdd, disponibles }) => {
             <div className="text-center py-10">
               <Search className="w-8 h-8 text-slate-200 mx-auto mb-2" />
               <p className="text-sm text-slate-400">Escriba para buscar personas del padrón.</p>
+            </div>
+          ) : !canSearch ? (
+            <div className="text-center py-10">
+              <Search className="w-8 h-8 text-slate-200 mx-auto mb-2" />
+              <p className="text-sm text-slate-400">Escriba al menos 2 caracteres para buscar por nombre o apellido.</p>
+            </div>
+          ) : isSearching ? (
+            <div className="text-center py-10">
+              <div className="w-8 h-8 border-4 border-brand-100 border-t-brand-600 rounded-full animate-spin mx-auto mb-2" />
+              <p className="text-sm text-slate-400">Buscando en el padrón...</p>
+            </div>
+          ) : searchError ? (
+            <div className="text-center py-10">
+              <Search className="w-8 h-8 text-red-200 mx-auto mb-2" />
+              <p className="text-sm text-red-500">{searchError}</p>
             </div>
           ) : pageData.length === 0 ? (
             <div className="text-center py-10">
