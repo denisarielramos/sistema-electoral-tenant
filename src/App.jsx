@@ -2,7 +2,7 @@
 // App maneja SOLO sesión/login.
 // Dashboard maneja TODO lo demás.
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
 import { ShieldCheck, Eye, EyeOff } from "lucide-react";
 import AdminGeneralDashboard from "./components/AdminGeneralDashboard";
@@ -47,6 +47,46 @@ const buildAdminUser = (adminUser, authProvider = null) => {
   };
 };
 
+async function getAdminProfileByAuthUserId(
+  authUserId,
+  { onlyActive = true } = {}
+) {
+  if (!authUserId) return null;
+
+  let query = supabase
+    .from("usuarios_admin")
+    .select("*")
+    .eq("auth_user_id", authUserId);
+
+  if (onlyActive) query = query.eq("activo", true);
+
+  const { data, error } = await query.maybeSingle();
+
+  if (error) console.error("Error obteniendo perfil admin Auth:", error);
+  return data || null;
+}
+
+async function getAdminProfileByIdentifier(
+  identifier,
+  { onlyActive = true } = {}
+) {
+  const value = identifier.trim();
+  if (!value) return null;
+
+  const field = value.includes("@") ? "email" : "username";
+  let query = supabase
+    .from("usuarios_admin")
+    .select("*")
+    .eq(field, value);
+
+  if (onlyActive) query = query.eq("activo", true);
+
+  const { data, error } = await query.maybeSingle();
+
+  if (error) console.error("Error obteniendo usuario admin:", error);
+  return data || null;
+}
+
 const App = () => {
   const {
     currentCampaign,
@@ -66,15 +106,40 @@ const App = () => {
   const [checkingAuth, setCheckingAuth] = useState(true);
 
   // ======================= SESIÓN PERSISTENTE =======================
-  useEffect(() => {
+  const restoreOperativeUserFromLocalStorage = useCallback(() => {
     const saved = localStorage.getItem("currentUser");
-    if (!saved) return;
+    if (!saved) {
+      setCurrentUser(null);
+      return;
+    }
+
     try {
       const u = JSON.parse(saved);
-      if (u && (u.ci || u.username) && u.role) setCurrentUser(u);
+      const isOperativeUser =
+        u?.role === "coordinador" || u?.role === "subcoordinador";
+
+      if (isOperativeUser && (u.ci || u.username)) {
+        setCurrentUser(u);
+        return;
+      }
     } catch (e) {
       console.error("Error leyendo sesión local:", e);
     }
+
+    localStorage.removeItem("currentUser");
+    setCurrentUser(null);
+  }, []);
+
+  const restoreAdminUserFromAuth = useCallback(async (authUserId) => {
+    if (!authUserId) return null;
+
+    const adminUser = await getAdminProfileByAuthUserId(authUserId);
+    if (!adminUser) return null;
+
+    const u = buildAdminUser(adminUser, "supabase");
+    setCurrentUser(u);
+    localStorage.setItem("currentUser", JSON.stringify(u));
+    return u;
   }, []);
 
   useEffect(() => {
@@ -87,28 +152,20 @@ const App = () => {
 
         const authUserId = data?.session?.user?.id;
         if (authUserId) {
-          const adminUser = await getAdminProfileByAuthUserId(authUserId);
-          if (adminUser && isMounted) {
-            const u = buildAdminUser(adminUser, "supabase");
-            setCurrentUser(u);
-            localStorage.setItem("currentUser", JSON.stringify(u));
+          const restored = await restoreAdminUserFromAuth(authUserId);
+          if (restored && isMounted) {
             return;
           }
           await supabase.auth.signOut();
-        }
-
-        const saved = localStorage.getItem("currentUser");
-        if (!saved) return;
-
-        const u = JSON.parse(saved);
-        const isOperativeUser =
-          u?.role === "coordinador" || u?.role === "subcoordinador";
-        if (!isOperativeUser) {
           localStorage.removeItem("currentUser");
           if (isMounted) setCurrentUser(null);
+          return;
         }
+
+        if (isMounted) restoreOperativeUserFromLocalStorage();
       } catch (e) {
         console.error("Error restaurando sesion Auth:", e);
+        if (isMounted) restoreOperativeUserFromLocalStorage();
       } finally {
         if (isMounted) setCheckingAuth(false);
       }
@@ -116,55 +173,44 @@ const App = () => {
 
     restoreAuthSession();
 
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (!isMounted) return;
+
+        if (event === "SIGNED_OUT") {
+          setCurrentUser(null);
+          localStorage.removeItem("currentUser");
+          return;
+        }
+
+        if (
+          event === "SIGNED_IN" ||
+          event === "TOKEN_REFRESHED" ||
+          event === "INITIAL_SESSION"
+        ) {
+          const authUserId = session?.user?.id;
+          if (!authUserId) return;
+
+          const restored = await restoreAdminUserFromAuth(authUserId);
+          if (!restored) {
+            await supabase.auth.signOut();
+            localStorage.removeItem("currentUser");
+            setCurrentUser(null);
+          }
+        }
+      }
+    );
+
     return () => {
       isMounted = false;
+      authListener?.subscription?.unsubscribe();
     };
-  }, []);
+  }, [restoreAdminUserFromAuth, restoreOperativeUserFromLocalStorage]);
 
   useEffect(() => {
     if (isAdminRoute || !currentUser?.campania_id) return;
     reloadCampaign(currentUser.campania_id);
   }, [currentUser?.campania_id, isAdminRoute, reloadCampaign]);
-
-  const getAdminProfileByAuthUserId = async (
-    authUserId,
-    { onlyActive = true } = {}
-  ) => {
-    if (!authUserId) return null;
-
-    let query = supabase
-      .from("usuarios_admin")
-      .select("*")
-      .eq("auth_user_id", authUserId);
-
-    if (onlyActive) query = query.eq("activo", true);
-
-    const { data, error } = await query.maybeSingle();
-
-    if (error) console.error("Error obteniendo perfil admin Auth:", error);
-    return data || null;
-  };
-
-  const getAdminProfileByIdentifier = async (
-    identifier,
-    { onlyActive = true } = {}
-  ) => {
-    const value = identifier.trim();
-    if (!value) return null;
-
-    const field = value.includes("@") ? "email" : "username";
-    let query = supabase
-      .from("usuarios_admin")
-      .select("*")
-      .eq(field, value);
-
-    if (onlyActive) query = query.eq("activo", true);
-
-    const { data, error } = await query.maybeSingle();
-
-    if (error) console.error("Error obteniendo usuario admin:", error);
-    return data || null;
-  };
 
   const loginAdminUserWithAuth = async (identifier) => {
     if (!loginPass) return null;
@@ -415,7 +461,7 @@ const App = () => {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center px-4">
         <div className="bg-white border border-slate-200 rounded-xl px-5 py-4 shadow-card text-sm font-semibold text-brand-700">
-          {checkingAuth ? "Verificando sesion..." : "Cargando campaña..."}
+          {checkingAuth ? "Validando sesión..." : "Cargando campaña..."}
         </div>
       </div>
     );
