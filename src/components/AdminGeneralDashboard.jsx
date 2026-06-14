@@ -3,6 +3,7 @@ import { LogOut, Plus, RefreshCw, Shield, Users, X } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import {
   crearCampania,
+  crearSuperadminCliente,
   crearTenant,
   listarCampaniaModulos,
   listarCampanias,
@@ -26,6 +27,15 @@ const EMPTY_CAMPAIGN = {
   color_primario: "#dc2626",
   color_secundario: "#991b1b",
   activa: true,
+};
+
+const EMPTY_SUPERADMIN = {
+  campania_id: "",
+  nombre: "",
+  apellido: "",
+  email: "",
+  username: "",
+  password: "",
 };
 
 const Section = ({ title, actions, children }) => (
@@ -99,10 +109,13 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
   const [savingModule, setSavingModule] = useState(null);
   const [error, setError] = useState(null);
   const [formError, setFormError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
   const [tenantModalOpen, setTenantModalOpen] = useState(false);
   const [campaignModalOpen, setCampaignModalOpen] = useState(false);
+  const [superadminModalOpen, setSuperadminModalOpen] = useState(false);
   const [tenantForm, setTenantForm] = useState({ nombre: "", estado: "activo" });
   const [campaignForm, setCampaignForm] = useState(EMPTY_CAMPAIGN);
+  const [superadminForm, setSuperadminForm] = useState(EMPTY_SUPERADMIN);
 
   const cargarDatos = useCallback(async () => {
     setLoading(true);
@@ -176,6 +189,12 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
     setFormError(null);
   };
 
+  const closeSuperadminModal = () => {
+    setSuperadminModalOpen(false);
+    setSuperadminForm(EMPTY_SUPERADMIN);
+    setFormError(null);
+  };
+
   const handleCrearTenant = async (event) => {
     event.preventDefault();
     setFormError(null);
@@ -246,6 +265,45 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
     setCampaignForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  const updateSuperadminForm = (field, value) => {
+    setSuperadminForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleCrearSuperadmin = async (event) => {
+    event.preventDefault();
+    setFormError(null);
+    setSuccessMessage(null);
+
+    const nombre = superadminForm.nombre.trim();
+    const username = superadminForm.username.trim();
+    const password = superadminForm.password.trim();
+
+    if (!superadminForm.campania_id || !nombre || !username || !password) {
+      setFormError("Campaña, nombre, usuario y contraseña son obligatorios.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await crearSuperadminCliente({
+        campania_id: superadminForm.campania_id,
+        nombre,
+        apellido: superadminForm.apellido.trim(),
+        email: superadminForm.email.trim(),
+        username,
+        password_hash: password,
+      });
+      closeSuperadminModal();
+      setSuccessMessage("Superadmin de cliente creado correctamente. La contraseña se guardó como demo en password_hash.");
+      await cargarDatos();
+    } catch (err) {
+      console.error("Error creando superadmin de cliente:", err);
+      setFormError(err?.message || "No se pudo crear el superadmin de cliente.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleToggleModulo = async (campaniaId, modulo, habilitado) => {
     const savingKey = `${campaniaId}:${modulo}`;
     setSavingModule(savingKey);
@@ -313,6 +371,12 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
           </div>
         )}
 
+        {successMessage && (
+          <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl px-4 py-3 text-sm">
+            {successMessage}
+          </div>
+        )}
+
         {loading && (
           <div className="bg-white border border-slate-200 rounded-xl px-5 py-4 text-sm font-semibold text-brand-700 shadow-card">
             Cargando datos de administración...
@@ -330,6 +394,14 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
           <ActionButton onClick={() => setTenantModalOpen(true)} variant="subtle">
             <Plus className="w-4 h-4" />
             Crear cliente / responsable
+          </ActionButton>
+          <ActionButton
+            onClick={() => setSuperadminModalOpen(true)}
+            disabled={campanias.length === 0}
+            variant="subtle"
+          >
+            <Plus className="w-4 h-4" />
+            Crear superadmin
           </ActionButton>
         </div>
 
@@ -479,26 +551,45 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
           )}
         </Section>
 
-        <Section title="Usuarios admin">
+        <Section
+          title="Usuarios admin"
+          actions={
+            <ActionButton
+              onClick={() => setSuperadminModalOpen(true)}
+              disabled={campanias.length === 0}
+              variant="subtle"
+            >
+              <Plus className="w-4 h-4" />
+              Crear superadmin
+            </ActionButton>
+          }
+        >
           {usuariosAdmin.length === 0 ? (
             <EmptyState text="No hay usuarios admin cargados." />
           ) : (
             <div className="space-y-2">
               {usuariosAdmin.map((usuario) => (
-                <div key={usuario.id} className="border border-slate-200 rounded-lg p-3 flex items-start gap-3">
+                <div key={usuario.id} className="border border-slate-200 rounded-lg p-3 flex items-start justify-between gap-3">
                   <div className="p-1.5 bg-slate-100 rounded-lg shrink-0">
                     <Users className="w-4 h-4 text-slate-500" />
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-slate-800 truncate">
-                      {usuario.nombre} {usuario.apellido}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {usuario.username || "sin username"} · {usuario.rol}
-                    </p>
-                    <p className="text-xs text-slate-500 truncate">
-                      Campaña: {usuario.campania_id ? (campanias.find((c) => c.id === usuario.campania_id)?.nombre || usuario.campania_id) : "Todas"}
-                    </p>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-800 truncate">
+                          {[usuario.nombre, usuario.apellido].filter(Boolean).join(" ") || "Sin nombre"}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {usuario.username || "sin username"} · {usuario.rol}
+                        </p>
+                        <p className="text-xs text-slate-500 truncate">
+                          Campaña: {usuario.campania_id ? (campanias.find((c) => c.id === usuario.campania_id)?.nombre || usuario.campania_id) : "Todas"}
+                        </p>
+                      </div>
+                      <span className={`text-xs font-semibold px-2 py-1 rounded-md self-start sm:self-center ${usuario.activo ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                        {usuario.activo ? "Activo" : "Inactivo"}
+                      </span>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -540,6 +631,88 @@ export default function AdminGeneralDashboard({ currentUser, onLogout }) {
               </ActionButton>
               <ActionButton type="submit" disabled={saving}>
                 Crear cliente / responsable
+              </ActionButton>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {superadminModalOpen && (
+        <Modal title="Crear superadmin de cliente" onClose={closeSuperadminModal}>
+          <form onSubmit={handleCrearSuperadmin} className="p-5 space-y-4">
+            {formError && (
+              <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2 text-sm">
+                {formError}
+              </div>
+            )}
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-3 py-2 text-xs">
+              Demo: la contraseña se guarda en password_hash sin hashing real. Antes de producción debe migrarse a Supabase Auth o hashing seguro.
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Campaña">
+                <select
+                  className={inputClass}
+                  value={superadminForm.campania_id}
+                  onChange={(e) => updateSuperadminForm("campania_id", e.target.value)}
+                  autoFocus
+                >
+                  <option value="">Seleccione campaña</option>
+                  {campanias.map((campania) => (
+                    <option key={campania.id} value={campania.id}>
+                      {campania.nombre}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Nombre">
+                <input
+                  className={inputClass}
+                  value={superadminForm.nombre}
+                  onChange={(e) => updateSuperadminForm("nombre", e.target.value)}
+                  placeholder="Nombre"
+                />
+              </Field>
+              <Field label="Apellido">
+                <input
+                  className={inputClass}
+                  value={superadminForm.apellido}
+                  onChange={(e) => updateSuperadminForm("apellido", e.target.value)}
+                  placeholder="Apellido"
+                />
+              </Field>
+              <Field label="Email">
+                <input
+                  className={inputClass}
+                  type="email"
+                  value={superadminForm.email}
+                  onChange={(e) => updateSuperadminForm("email", e.target.value)}
+                  placeholder="correo@ejemplo.com"
+                />
+              </Field>
+              <Field label="Usuario">
+                <input
+                  className={inputClass}
+                  value={superadminForm.username}
+                  onChange={(e) => updateSuperadminForm("username", e.target.value)}
+                  placeholder="usuario"
+                />
+              </Field>
+              <Field label="Contraseña">
+                <input
+                  className={inputClass}
+                  type="password"
+                  value={superadminForm.password}
+                  onChange={(e) => updateSuperadminForm("password", e.target.value)}
+                  placeholder="Contraseña demo"
+                />
+              </Field>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <ActionButton onClick={closeSuperadminModal} variant="subtle">
+                Cancelar
+              </ActionButton>
+              <ActionButton type="submit" disabled={saving}>
+                Crear superadmin
               </ActionButton>
             </div>
           </form>

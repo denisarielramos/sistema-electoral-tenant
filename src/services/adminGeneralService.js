@@ -80,3 +80,25 @@ export async function setModuloCampania(campaniaId, modulo, habilitado) {
   if (error) throw error;
   return data;
 }
+
+export async function crearSuperadminCliente(payload) {
+  const { data, error } = await supabase
+    .from("usuarios_admin")
+    .insert([
+      {
+        campania_id: payload.campania_id,
+        rol: "superadmin_cliente",
+        nombre: payload.nombre,
+        apellido: payload.apellido || null,
+        email: payload.email || null,
+        username: payload.username,
+        password_hash: payload.password_hash,
+        activo: true,
+      },
+    ])
+    .select("id,auth_user_id,campania_id,rol,nombre,apellido,email,username,activo,created_at")
+    .single();
+
+  if (error) throw error;
+  return data;
+}
