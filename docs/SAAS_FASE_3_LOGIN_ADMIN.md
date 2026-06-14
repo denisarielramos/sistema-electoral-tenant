@@ -79,3 +79,11 @@ Tambien falta activar y diseñar RLS antes de usar datos reales.
 - Asociar `CampaignContext` al `campania_id` del usuario logueado.
 - Preparar cambio a Supabase Auth.
 - Agregar CRUD inicial para crear campañas y habilitar módulos.
+
+## Ruta Admin
+
+La separación de `/` y `/admin` queda documentada en:
+
+```text
+docs/SAAS_FASE_4_ADMIN_ROUTE.md
+```

@@ -26,12 +26,33 @@ const SUPERADMINS = [
   },
 ];
 
+const buildAdminUser = (adminUser) => {
+  const isAdminGeneral = adminUser.rol === "admin_general";
+  const isSuperadminCliente = adminUser.rol === "superadmin_cliente";
+
+  return {
+    ci: adminUser.username,
+    id: adminUser.id,
+    username: adminUser.username,
+    nombre: adminUser.nombre || "",
+    apellido: adminUser.apellido || "",
+    email: adminUser.email || "",
+    role: isSuperadminCliente ? "superadmin" : adminUser.rol,
+    rol: adminUser.rol,
+    campania_id: adminUser.campania_id,
+    esAdminGeneral: isAdminGeneral,
+    esSuperadminCliente: isSuperadminCliente,
+  };
+};
+
 const App = () => {
   const {
     currentCampaign,
     loadingCampaign,
     campaignError,
   } = useCampaign();
+
+  const isAdminRoute = window.location.pathname.startsWith("/admin");
 
   // ======================= SESIÓN =======================
   const [currentUser, setCurrentUser] = useState(null);
@@ -52,49 +73,63 @@ const App = () => {
     }
   }, []);
 
+  const loginAdminUser = async (code) => {
+    const { data: adminUser, error: adminErr } = await supabase
+      .from("usuarios_admin")
+      .select("*")
+      .eq("username", code)
+      .eq("activo", true)
+      .maybeSingle();
+
+    if (adminErr) console.error("Error login admin:", adminErr);
+    if (!adminUser) return null;
+
+    if (loginPass !== adminUser.password_hash) {
+      alert("Contraseña incorrecta.");
+      return "handled";
+    }
+
+    return buildAdminUser(adminUser);
+  };
+
   // ======================= LOGIN =======================
   const handleLogin = async () => {
     const code = loginID.trim();
-    if (!code) return alert("Ingrese CI o código.");
+    if (!code) return alert(isAdminRoute ? "Ingrese usuario." : "Ingrese usuario o código.");
 
     setIsLogging(true);
 
     try {
-      // ======================= USUARIOS ADMIN SAAS (DEMO) =======================
+      // ======================= RUTA ADMIN =======================
+      if (isAdminRoute) {
+        if (!loginPass) return alert("Ingrese contraseña.");
+
+        const adminLogin = await loginAdminUser(code);
+        if (adminLogin === "handled") return;
+
+        if (!adminLogin || adminLogin.rol !== "admin_general") {
+          alert("Este acceso es solo para Admin General.");
+          return;
+        }
+
+        setCurrentUser(adminLogin);
+        localStorage.setItem("currentUser", JSON.stringify(adminLogin));
+        return;
+      }
+
+      // ======================= USUARIOS ADMIN CLIENTE (DEMO) =======================
       if (loginPass) {
-        const { data: adminUser, error: adminErr } = await supabase
-          .from("usuarios_admin")
-          .select("*")
-          .eq("username", code)
-          .eq("activo", true)
-          .maybeSingle();
+        const adminLogin = await loginAdminUser(code);
+        if (adminLogin === "handled") return;
 
-        if (adminErr) console.error("Error login admin:", adminErr);
-
-        if (adminUser) {
-          if (loginPass !== adminUser.password_hash) {
-            alert("Contraseña incorrecta.");
+        if (adminLogin) {
+          if (adminLogin.esAdminGeneral) {
+            alert("El Admin General debe ingresar desde /admin");
             return;
           }
 
-          const isAdminGeneral = adminUser.rol === "admin_general";
-          const isSuperadminCliente = adminUser.rol === "superadmin_cliente";
-          const u = {
-            ci: adminUser.username,
-            id: adminUser.id,
-            username: adminUser.username,
-            nombre: adminUser.nombre || "",
-            apellido: adminUser.apellido || "",
-            email: adminUser.email || "",
-            role: isSuperadminCliente ? "superadmin" : adminUser.rol,
-            rol: adminUser.rol,
-            campania_id: adminUser.campania_id,
-            esAdminGeneral: isAdminGeneral,
-            esSuperadminCliente: isSuperadminCliente,
-          };
-
-          setCurrentUser(u);
-          localStorage.setItem("currentUser", JSON.stringify(u));
+          setCurrentUser(adminLogin);
+          localStorage.setItem("currentUser", JSON.stringify(adminLogin));
           return;
         }
       }
@@ -201,12 +236,12 @@ const App = () => {
         currentCampaign.cargo,
         currentCampaign.anio,
       ].filter(Boolean).join(" - ")
-    : "GestiÃ³n de Votantes";
+    : "Gestión de Votantes";
   const campaignOption = currentCampaign
     ? [currentCampaign.lista, currentCampaign.opcion].filter(Boolean).join(" - ")
     : "";
 
-  if (loadingCampaign) {
+  if (!isAdminRoute && loadingCampaign) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center px-4">
         <div className="bg-white border border-slate-200 rounded-xl px-5 py-4 shadow-card text-sm font-semibold text-brand-700">
@@ -216,7 +251,7 @@ const App = () => {
     );
   }
 
-  if (campaignError || !currentCampaign) {
+  if (!isAdminRoute && (campaignError || !currentCampaign)) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center px-4">
         <div className="bg-white border border-slate-200 rounded-xl px-5 py-4 shadow-card max-w-md text-center">
@@ -233,10 +268,30 @@ const App = () => {
 
   // ======================= DASHBOARD =======================
   if (currentUser) {
+    if (isAdminRoute) {
+      if (currentUser.esAdminGeneral) {
+        return (
+          <AdminGeneralDashboard
+            currentUser={currentUser}
+            onLogout={handleLogout}
+          />
+        );
+      }
+
+      return (
+        <AccessMessage
+          title="Este acceso es solo para Admin General."
+          detail="Cerrá esta sesión o volvé al acceso de campaña."
+          onLogout={handleLogout}
+        />
+      );
+    }
+
     if (currentUser.esAdminGeneral) {
       return (
-        <AdminGeneralDashboard
-          currentUser={currentUser}
+        <AccessMessage
+          title="El Admin General debe ingresar desde /admin"
+          detail="Cerrá esta sesión para ingresar con un usuario de campaña."
           onLogout={handleLogout}
         />
       );
@@ -245,10 +300,17 @@ const App = () => {
     return <Dashboard currentUser={currentUser} onLogout={handleLogout} />;
   }
 
+  const loginTitle = isAdminRoute ? "Admin General" : "Sistema Electoral";
+  const loginSubtitle = isAdminRoute
+    ? "Acceso administrativo de plataforma"
+    : "Acceso de campaña";
+  const loginDetail = isAdminRoute
+    ? ""
+    : [campaignTitle, campaignSubtitle, campaignOption].filter(Boolean).join(" · ");
+
   // ======================= LOGIN VIEW =======================
   return (
     <div className="min-h-screen bg-slate-100 flex items-center justify-center px-4 py-8">
-      {/* Background decoration */}
       <div
         className="absolute inset-0 overflow-hidden pointer-events-none"
         aria-hidden="true"
@@ -258,35 +320,31 @@ const App = () => {
       </div>
 
       <div className="relative w-full max-w-md">
-        {/* Card */}
         <div className="bg-white rounded-2xl shadow-card-md overflow-hidden">
-          {/* Header band */}
           <div className="bg-brand-700 px-8 py-6 text-white text-center">
             <div className="inline-flex items-center justify-center w-14 h-14 bg-white/10 rounded-full mb-3">
               <ShieldCheck className="w-7 h-7 text-white" />
             </div>
             <h1 className="text-2xl font-bold tracking-tight">
-              {campaignTitle}
+              {loginTitle}
             </h1>
             <p className="text-brand-200 text-sm mt-1">
-              {campaignSubtitle || "GestiÃ³n de Votantes"}
+              {loginSubtitle}
             </p>
-            {campaignOption && (
+            {loginDetail && (
               <p className="text-brand-100 text-xs mt-1">
-                {campaignOption}
+                {loginDetail}
               </p>
             )}
           </div>
 
-          {/* Form */}
           <div className="px-8 py-7 space-y-5">
-            {/* CI / Código */}
             <div>
               <label
                 htmlFor="loginID"
                 className="block text-sm font-medium text-slate-700 mb-1.5"
               >
-                Usuario o Código de Acceso
+                {isAdminRoute ? "Usuario" : "Código de acceso o usuario de cliente"}
               </label>
               <input
                 id="loginID"
@@ -295,46 +353,44 @@ const App = () => {
                 onChange={(e) => setLoginID(e.target.value)}
                 onKeyDown={handleKeyDown}
                 className="w-full px-4 py-2.5 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent bg-slate-50 placeholder-slate-400"
-                placeholder="Ej: A1B2C3D4"
+                placeholder={isAdminRoute ? "admin" : "Ej: COORD-DEMO"}
                 autoComplete="username"
               />
             </div>
 
-            {/* Contraseña — admins y superadmins locales */}
             <div>
-                <label
-                  htmlFor="loginPass"
-                  className="block text-sm font-medium text-slate-700 mb-1.5"
+              <label
+                htmlFor="loginPass"
+                className="block text-sm font-medium text-slate-700 mb-1.5"
+              >
+                Contraseña
+              </label>
+              <div className="relative">
+                <input
+                  id="loginPass"
+                  type={showPass ? "text" : "password"}
+                  value={loginPass}
+                  onChange={(e) => setLoginPass(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  className="w-full px-4 py-2.5 pr-11 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent bg-slate-50 placeholder-slate-400"
+                  placeholder={isAdminRoute ? "Contraseña admin" : "Solo para usuarios de cliente"}
+                  autoComplete="current-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPass((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0 border-0 bg-transparent shadow-none"
+                  aria-label={showPass ? "Ocultar contraseña" : "Mostrar contraseña"}
                 >
-                  Contraseña
-                </label>
-                <div className="relative">
-                  <input
-                    id="loginPass"
-                    type={showPass ? "text" : "password"}
-                    value={loginPass}
-                    onChange={(e) => setLoginPass(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    className="w-full px-4 py-2.5 pr-11 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent bg-slate-50 placeholder-slate-400"
-                    placeholder="Solo para usuarios admin"
-                    autoComplete="current-password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPass((v) => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0 border-0 bg-transparent shadow-none"
-                    aria-label={showPass ? "Ocultar contraseña" : "Mostrar contraseña"}
-                  >
-                    {showPass ? (
-                      <EyeOff className="w-4 h-4" />
-                    ) : (
-                      <Eye className="w-4 h-4" />
-                    )}
-                  </button>
-                </div>
+                  {showPass ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
             </div>
 
-            {/* Submit */}
             <button
               onClick={handleLogin}
               disabled={isLogging}
@@ -351,15 +407,21 @@ const App = () => {
             </button>
           </div>
 
-          {/* Footer note */}
           <div className="px-8 pb-7">
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-600 space-y-1">
               <p className="font-semibold text-slate-700 mb-2">Instrucciones</p>
-              <ol className="list-decimal ml-4 space-y-1 leading-relaxed">
-                <li>Ingrese su usuario admin o código de acceso proporcionado.</li>
-                <li>Coordinadores y subcoordinadores pueden dejar la contraseña vacía.</li>
-                <li>Ante dudas, comuníquese con el administrador.</li>
-              </ol>
+              {isAdminRoute ? (
+                <ol className="list-decimal ml-4 space-y-1 leading-relaxed">
+                  <li>Use el usuario y contraseña de Admin General.</li>
+                  <li>Los accesos de campaña no ingresan desde esta ruta.</li>
+                </ol>
+              ) : (
+                <ol className="list-decimal ml-4 space-y-1 leading-relaxed">
+                  <li>Ingrese código de coordinador/subcoordinador o usuario de cliente.</li>
+                  <li>Coordinadores y subcoordinadores pueden dejar la contraseña vacía.</li>
+                  <li>El Admin General debe ingresar desde /admin.</li>
+                </ol>
+              )}
             </div>
           </div>
         </div>
@@ -367,5 +429,22 @@ const App = () => {
     </div>
   );
 };
+
+function AccessMessage({ title, detail, onLogout }) {
+  return (
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center px-4">
+      <div className="bg-white border border-slate-200 rounded-xl px-5 py-5 shadow-card max-w-md text-center">
+        <p className="text-sm font-semibold text-slate-800">{title}</p>
+        {detail && <p className="text-xs text-slate-500 mt-1">{detail}</p>}
+        <button
+          onClick={onLogout}
+          className="mt-4 h-10 px-4 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold border-0"
+        >
+          Cerrar sesión
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default App;
