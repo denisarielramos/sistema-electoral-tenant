@@ -126,31 +126,41 @@ const App = () => {
     reloadCampaign(currentUser.campania_id);
   }, [currentUser?.campania_id, isAdminRoute, reloadCampaign]);
 
-  const getAdminProfileByAuthUserId = async (authUserId) => {
+  const getAdminProfileByAuthUserId = async (
+    authUserId,
+    { onlyActive = true } = {}
+  ) => {
     if (!authUserId) return null;
 
-    const { data, error } = await supabase
+    let query = supabase
       .from("usuarios_admin")
       .select("*")
-      .eq("auth_user_id", authUserId)
-      .eq("activo", true)
-      .maybeSingle();
+      .eq("auth_user_id", authUserId);
+
+    if (onlyActive) query = query.eq("activo", true);
+
+    const { data, error } = await query.maybeSingle();
 
     if (error) console.error("Error obteniendo perfil admin Auth:", error);
     return data || null;
   };
 
-  const getAdminProfileByIdentifier = async (identifier) => {
+  const getAdminProfileByIdentifier = async (
+    identifier,
+    { onlyActive = true } = {}
+  ) => {
     const value = identifier.trim();
     if (!value) return null;
 
     const field = value.includes("@") ? "email" : "username";
-    const { data, error } = await supabase
+    let query = supabase
       .from("usuarios_admin")
       .select("*")
-      .eq(field, value)
-      .eq("activo", true)
-      .maybeSingle();
+      .eq(field, value);
+
+    if (onlyActive) query = query.eq("activo", true);
+
+    const { data, error } = await query.maybeSingle();
 
     if (error) console.error("Error obteniendo usuario admin:", error);
     return data || null;
@@ -163,8 +173,14 @@ const App = () => {
     let email = value.includes("@") ? value : "";
 
     if (!email) {
-      const adminByUsername = await getAdminProfileByIdentifier(value);
+      const adminByUsername = await getAdminProfileByIdentifier(value, {
+        onlyActive: false,
+      });
       if (!adminByUsername?.email) return null;
+      if (!adminByUsername.activo) {
+        alert("El perfil de usuario existe, pero está inactivo.");
+        return "handled";
+      }
       email = adminByUsername.email;
     }
 
@@ -178,12 +194,20 @@ const App = () => {
       return null;
     }
 
-    const adminUser = await getAdminProfileByAuthUserId(data?.user?.id);
+    const adminUser = await getAdminProfileByAuthUserId(data?.user?.id, {
+      onlyActive: false,
+    });
 
     if (!adminUser) {
       await supabase.auth.signOut();
-      console.warn("Usuario Auth sin perfil activo en usuarios_admin.");
-      return null;
+      alert("El usuario Auth existe, pero no tiene perfil en usuarios_admin.");
+      return "handled";
+    }
+
+    if (!adminUser.activo) {
+      await supabase.auth.signOut();
+      alert("El perfil de usuario existe, pero está inactivo.");
+      return "handled";
     }
 
     return buildAdminUser(adminUser, "supabase");
