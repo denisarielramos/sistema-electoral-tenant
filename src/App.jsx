@@ -5,6 +5,7 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
 import { ShieldCheck, Eye, EyeOff } from "lucide-react";
+import AdminGeneralDashboard from "./components/AdminGeneralDashboard";
 import Dashboard from "./components/Dashboard";
 import { useCampaign } from "./context/CampaignContext";
 import { normalizeCI } from "./utils/estructuraHelpers";
@@ -45,13 +46,11 @@ const App = () => {
     if (!saved) return;
     try {
       const u = JSON.parse(saved);
-      if (u && u.ci && u.role) setCurrentUser(u);
+      if (u && (u.ci || u.username) && u.role) setCurrentUser(u);
     } catch (e) {
       console.error("Error leyendo sesión local:", e);
     }
   }, []);
-
-  const isSuperadminLogin = SUPERADMINS.some((s) => s.ci === loginID.trim());
 
   // ======================= LOGIN =======================
   const handleLogin = async () => {
@@ -61,6 +60,45 @@ const App = () => {
     setIsLogging(true);
 
     try {
+      // ======================= USUARIOS ADMIN SAAS (DEMO) =======================
+      if (loginPass) {
+        const { data: adminUser, error: adminErr } = await supabase
+          .from("usuarios_admin")
+          .select("*")
+          .eq("username", code)
+          .eq("activo", true)
+          .maybeSingle();
+
+        if (adminErr) console.error("Error login admin:", adminErr);
+
+        if (adminUser) {
+          if (loginPass !== adminUser.password_hash) {
+            alert("Contraseña incorrecta.");
+            return;
+          }
+
+          const isAdminGeneral = adminUser.rol === "admin_general";
+          const isSuperadminCliente = adminUser.rol === "superadmin_cliente";
+          const u = {
+            ci: adminUser.username,
+            id: adminUser.id,
+            username: adminUser.username,
+            nombre: adminUser.nombre || "",
+            apellido: adminUser.apellido || "",
+            email: adminUser.email || "",
+            role: isSuperadminCliente ? "superadmin" : adminUser.rol,
+            rol: adminUser.rol,
+            campania_id: adminUser.campania_id,
+            esAdminGeneral: isAdminGeneral,
+            esSuperadminCliente: isSuperadminCliente,
+          };
+
+          setCurrentUser(u);
+          localStorage.setItem("currentUser", JSON.stringify(u));
+          return;
+        }
+      }
+
       // ======================= SUPERADMIN LOCAL =======================
       const superadmin = SUPERADMINS.find((s) => s.ci === code);
 
@@ -71,9 +109,14 @@ const App = () => {
         }
         const u = {
           ci: superadmin.ci,
+          username: superadmin.ci,
           nombre: superadmin.nombre,
           apellido: superadmin.apellido,
           role: "superadmin",
+          rol: "superadmin_local",
+          campania_id: currentCampaign?.id || null,
+          esAdminGeneral: false,
+          esSuperadminCliente: false,
         };
         setCurrentUser(u);
         localStorage.setItem("currentUser", JSON.stringify(u));
@@ -83,7 +126,7 @@ const App = () => {
       // ======================= COORDINADOR =======================
       const { data: coord, error: coordErr } = await supabase
         .from("coordinadores")
-        .select("ci,login_code,telefono,padron(*)")
+        .select("ci,login_code,telefono,campania_id,padron(*)")
         .eq("login_code", code)
         .maybeSingle();
 
@@ -92,10 +135,15 @@ const App = () => {
       if (coord?.padron) {
         const u = {
           ci: normalizeCI(coord.ci),
+          username: normalizeCI(coord.ci),
           nombre: coord.padron.nombre,
           apellido: coord.padron.apellido,
           telefono: coord.telefono || "",
           role: "coordinador",
+          rol: "coordinador",
+          campania_id: coord.campania_id || currentCampaign?.id || null,
+          esAdminGeneral: false,
+          esSuperadminCliente: false,
         };
         setCurrentUser(u);
         localStorage.setItem("currentUser", JSON.stringify(u));
@@ -105,7 +153,7 @@ const App = () => {
       // ======================= SUBCOORDINADOR =======================
       const { data: sub, error: subErr } = await supabase
         .from("subcoordinadores")
-        .select("ci,login_code,telefono,coordinador_ci,padron(*)")
+        .select("ci,login_code,telefono,coordinador_ci,campania_id,padron(*)")
         .eq("login_code", code)
         .maybeSingle();
 
@@ -114,10 +162,15 @@ const App = () => {
       if (sub?.padron) {
         const u = {
           ci: normalizeCI(sub.ci),
+          username: normalizeCI(sub.ci),
           nombre: sub.padron.nombre,
           apellido: sub.padron.apellido,
           telefono: sub.telefono || "",
           role: "subcoordinador",
+          rol: "subcoordinador",
+          campania_id: sub.campania_id || currentCampaign?.id || null,
+          esAdminGeneral: false,
+          esSuperadminCliente: false,
         };
         setCurrentUser(u);
         localStorage.setItem("currentUser", JSON.stringify(u));
@@ -180,6 +233,15 @@ const App = () => {
 
   // ======================= DASHBOARD =======================
   if (currentUser) {
+    if (currentUser.esAdminGeneral) {
+      return (
+        <AdminGeneralDashboard
+          currentUser={currentUser}
+          onLogout={handleLogout}
+        />
+      );
+    }
+
     return <Dashboard currentUser={currentUser} onLogout={handleLogout} />;
   }
 
@@ -224,7 +286,7 @@ const App = () => {
                 htmlFor="loginID"
                 className="block text-sm font-medium text-slate-700 mb-1.5"
               >
-                CI o Código de Acceso
+                Usuario o Código de Acceso
               </label>
               <input
                 id="loginID"
@@ -238,14 +300,13 @@ const App = () => {
               />
             </div>
 
-            {/* Contraseña — solo superadmin */}
-            {isSuperadminLogin && (
-              <div className="animate-fade-in">
+            {/* Contraseña — admins y superadmins locales */}
+            <div>
                 <label
                   htmlFor="loginPass"
                   className="block text-sm font-medium text-slate-700 mb-1.5"
                 >
-                  Contraseña Superadmin
+                  Contraseña
                 </label>
                 <div className="relative">
                   <input
@@ -255,7 +316,7 @@ const App = () => {
                     onChange={(e) => setLoginPass(e.target.value)}
                     onKeyDown={handleKeyDown}
                     className="w-full px-4 py-2.5 pr-11 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent bg-slate-50 placeholder-slate-400"
-                    placeholder="Ingrese contraseña"
+                    placeholder="Solo para usuarios admin"
                     autoComplete="current-password"
                   />
                   <button
@@ -271,8 +332,7 @@ const App = () => {
                     )}
                   </button>
                 </div>
-              </div>
-            )}
+            </div>
 
             {/* Submit */}
             <button
@@ -296,8 +356,8 @@ const App = () => {
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-600 space-y-1">
               <p className="font-semibold text-slate-700 mb-2">Instrucciones</p>
               <ol className="list-decimal ml-4 space-y-1 leading-relaxed">
-                <li>Ingrese su CI o código de acceso proporcionado.</li>
-                <li>Los superadmins deben ingresar su contraseña.</li>
+                <li>Ingrese su usuario admin o código de acceso proporcionado.</li>
+                <li>Coordinadores y subcoordinadores pueden dejar la contraseña vacía.</li>
                 <li>Ante dudas, comuníquese con el administrador.</li>
               </ol>
             </div>
