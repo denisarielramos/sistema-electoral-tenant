@@ -153,12 +153,10 @@ const App = () => {
         const authUserId = data?.session?.user?.id;
         if (authUserId) {
           const restored = await restoreAdminUserFromAuth(authUserId);
-          if (restored && isMounted) {
-            return;
+          if (!restored) {
+            localStorage.removeItem("currentUser");
+            if (isMounted) setCurrentUser(null);
           }
-          await supabase.auth.signOut();
-          localStorage.removeItem("currentUser");
-          if (isMounted) setCurrentUser(null);
           return;
         }
 
@@ -174,7 +172,7 @@ const App = () => {
     restoreAuthSession();
 
     const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         if (!isMounted) return;
 
         if (event === "SIGNED_OUT") {
@@ -183,20 +181,18 @@ const App = () => {
           return;
         }
 
-        if (
-          event === "SIGNED_IN" ||
-          event === "TOKEN_REFRESHED" ||
-          event === "INITIAL_SESSION"
-        ) {
+        if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
           const authUserId = session?.user?.id;
           if (!authUserId) return;
 
-          const restored = await restoreAdminUserFromAuth(authUserId);
-          if (!restored) {
-            await supabase.auth.signOut();
-            localStorage.removeItem("currentUser");
-            setCurrentUser(null);
-          }
+          window.setTimeout(async () => {
+            if (!isMounted) return;
+            const restored = await restoreAdminUserFromAuth(authUserId);
+            if (!restored && isMounted) {
+              localStorage.removeItem("currentUser");
+              setCurrentUser(null);
+            }
+          }, 0);
         }
       }
     );
